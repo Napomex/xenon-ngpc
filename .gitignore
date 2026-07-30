@@ -1,0 +1,42 @@
+# Source code and the finished ROM only. Everything large, regenerable or
+# machine-specific stays out.
+
+# Build intermediates of the cc900 / tulink chain
+*.rel
+*.abs
+*.s24
+*.map
+*.new
+
+# Raw audio (the baked note tables live in the repository as Musik/*.c)
+*.wav
+
+# Images and tool project files
+*.png
+*.pdn
+*.html
+*.json
+*.psd
+*.bmp
+
+# Directories that are not source code
+tools/
+Screenshots/
+Testroms/
+Archiv/
+DOS_Version/
+Info/
+PNG/RAW/
+
+# Editor and tooling leftovers
+.claude/
+__pycache__/
+*.pyc
+Thumbs.db
+desktop.ini
+
+# Machine-specific files and internal working notes (they contain local
+# absolute paths); the repository-facing documentation is README.md
+compile.bat
+CLAUDE.md
+PNG/Map/*.md

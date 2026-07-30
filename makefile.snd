@@ -1,0 +1,25 @@
+.SUFFIXES: .c .asm .rel .abs
+NAME = sndtest
+# sndtest.rel MUST be first: carthdr.h consts -> cartridge header at 0x200000.
+# Song data (Musik/xenon_songs.c) is #included directly into sndtest.c.
+OBJS = \
+	sndtest.rel \
+	library.rel \
+	sounds.rel \
+
+
+$(NAME).ngp: makefile.snd ngpc.lcf $(OBJS)
+	tulink -la -o $(NAME).abs ngpc.lcf system.lib $(OBJS)
+	tuconv -Fs24 $(NAME).abs
+	s242ngp $(NAME).s24
+
+sndtest.rel: sndtest.c ngpc.h carthdr.h library.h sounds.h Musik/xenon_songs.c
+
+.c.rel:
+	cc900 -c -O3 $< -o $@
+
+.asm.rel:
+	asm900 -g $<
+
+clean:
+	del sndtest.rel sndtest.abs sndtest.s24 sndtest.map

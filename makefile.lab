@@ -1,0 +1,17 @@
+.SUFFIXES: .c .asm .rel .abs
+NAME = sndlab
+OBJS = sndlab.rel library.rel sounds.rel
+SONGS = Musik/xenon_songs.c Musik/xenon_songs2.c Musik/xenon_songs2b.c Musik/xenon_songs2c.c Musik/xenon_songs2d.c Musik/xenon_songs_xg.c Musik/xenon_songs_xgb.c Musik/xenon_songs_xgc.c
+
+$(NAME).ngp: makefile.lab ngpc.lcf $(OBJS)
+	tulink -la -o $(NAME).abs ngpc.lcf system.lib $(OBJS)
+	tuconv -Fs24 $(NAME).abs
+	s242ngp $(NAME).s24
+
+sndlab.rel: sndlab.c ngpc.h carthdr.h library.h sounds.h $(SONGS)
+sounds.rel: sounds.c sounds.h ngpc.h
+
+.c.rel:
+	cc900 -c -O3 $< -o $@
+.asm.rel:
+	asm900 -g $<

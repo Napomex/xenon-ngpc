@@ -1,0 +1,15 @@
+.SUFFIXES: .c .asm .rel .abs
+NAME = sndtest2
+OBJS = sndtest2.rel library.rel sounds.rel
+
+$(NAME).ngp: makefile.snd2 ngpc.lcf $(OBJS)
+	tulink -la -o $(NAME).abs ngpc.lcf system.lib $(OBJS)
+	tuconv -Fs24 $(NAME).abs
+	s242ngp $(NAME).s24
+
+sndtest2.rel: sndtest2.c ngpc.h carthdr.h library.h sounds.h Musik/xenon_songs2.c Musik/xenon_songs.c
+
+.c.rel:
+	cc900 -c -O3 $< -o $@
+.asm.rel:
+	asm900 -g $<
