@@ -1,4 +1,4 @@
-/* logo_tiles.h -- generiert aus PNG/RAW/Logo.png (Node-Scratchpad-Skript) */
+/* logo_tiles.h -- generated from PNG/RAW/Logo.png by a Node script */
 #define LOGO_TILE_COUNT 94u
 #define LOGO_TW 16u
 #define LOGO_TH 5u
