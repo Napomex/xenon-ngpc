@@ -25,7 +25,7 @@ typedef void __interrupt Interrupt();
 typedef void (*FuncPtr)(void);
 
 #define TRUN                (*(u8*)0x0020)
-#define TREG0               (*(u8*)0x0022)   /* Nutzerwunsch 15.07.2026: Timer0 fuer Ein-Split-HUD, siehe raster_split_* */
+#define TREG0               (*(u8*)0x0022)   /* Timer 0 for the single-split HUD, see raster_split_* */
 #define T01MOD              (*(u8*)0x0024)   /* Timer 0/1 Modus (Taktquelle etc.) */
 #define TFFCR               (*(u8*)0x0025)
 #define TREG3               (*(u8*)0x0027)

@@ -127,12 +127,11 @@ typedef struct {
       0, 0, 1, 0, 0, \
       0, 0, 0, 1, 0, 1 }
 
-/* Map-Update 15.07.2026: ersetzt durch die Instrumentbank aus
- * Musik/Titel_instruments.c (NGPC Sound Creator, Song "Titel") -- siehe
- * dortigen Kommentar "Keep this table in sync with driver_custom_latest/
- * sounds.c". Feldreihenfolge/-anzahl von BgmInstrument ist identisch (34
- * Felder), die rohen Klammerlisten sind deshalb direkt uebernehmbar, ohne
- * die BGM_INST(...)-Makros zu benutzen. */
+/* Replaced by the instrument bank from Musik/Titel_instruments.c (NGPC
+   Sound Creator, song "Titel") - see the comment there about keeping the
+   table in sync with sounds.c. The field order and count of BgmInstrument
+   are identical (34 fields), so the raw brace lists can be taken over
+   directly without using the BGM_INST(...) macros. */
 static const BgmInstrument s_bgm_instruments[] = {
     /* 0: Clean Tone */
     { 2, 0, 1, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1 },

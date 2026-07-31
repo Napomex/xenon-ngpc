@@ -515,10 +515,10 @@ void SetWindowColor(u16 Col) {
    OUTSIDE = Col;
 }
 
-/* 25.07.2026: letzte GESCHRIEBENE OAM-Position je Sprite (Byte2|Byte3<<8).
-   Nur ein Schreib-Cache - Startwert 0 ist unkritisch, weil jeder Zeichenpfad
-   mit einem vollen SetSprite beginnt (das den Cache setzt). Siehe
-   SetSpritePosition() fuer den Dirty-Check. */
+/* Last OAM position WRITTEN per sprite (byte2 | byte3<<8). A write cache
+   only - a starting value of 0 is harmless, because every drawing path
+   begins with a full SetSprite, which sets the cache. See
+   SetSpritePosition() for the dirty check. */
 u16 g_oam_pos_shadow[64];
 
 void SetSprite(u8 SpriteNo, u16 TileNo, u8 Chain, u8 XPos, u8 YPos, u8 PaletteNo) {
@@ -542,11 +542,11 @@ void SetSprite(u8 SpriteNo, u16 TileNo, u8 Chain, u8 XPos, u8 YPos, u8 PaletteNo
    if (Chain)
       SprCtrlReg += 6; // v and h chaining
 
-   /* 25.07.2026 OAM-Optimierung (HW-fps): die vier Bytes als ZWEI 16-Bit-Worte
-      schreiben statt als vier Einzelbytes - halbiert die Bus-Transaktionen zum
-      OAM (0x8800 ist wortausgerichtet, +0/+2 also immer gerade). Der K2GE
-      bestraft jeden einzelnen Zugriff waehrend des aktiven Bildaufbaus, die
-      Anzahl zaehlt also direkt (siehe Messreihe 24./25.07.). */
+   /* OAM optimisation: write the four bytes as TWO 16-bit words rather
+      than four single bytes, halving the bus transactions to the OAM
+      (0x8800 is word aligned, so +0 and +2 are always even). The K2GE
+      penalises every individual access during active display, so the count
+      matters directly. */
    {
       u16 *w = (u16 *)theSprite;
       u16 ctl, lo, hi;
@@ -556,7 +556,7 @@ void SetSprite(u8 SpriteNo, u16 TileNo, u8 Chain, u8 XPos, u8 YPos, u8 PaletteNo
       w[0] = (u16)(lo | hi);                             /* Byte0 Tile-Low, Byte1 Ctrl */
       hi   = (u16)((u16)YPos << 8);
       w[1] = (u16)((u16)XPos | hi);                      /* Byte2 X, Byte3 Y */
-      g_oam_pos_shadow[SpriteNo] = w[1];                 /* Positions-Cache mitfuehren (siehe SetSpritePosition) */
+      g_oam_pos_shadow[SpriteNo] = w[1];                 /* keep the position cache up to date (see SetSpritePosition) */
    }
 
    *theSpriteCol = PaletteNo;
@@ -568,14 +568,13 @@ void SpriteControl(u8 SpriteNo, u8 Priority, u8 Flips) {
    u8 * theSprite = SPRITE_RAM + (SpriteNo * 4);
    u8 kept, merged;
 
-   /* Bugfix 11.07.2026: die urspruengliche Ein-Zeilen-Fassung
-      (*(theSprite+1) = *(theSprite+1) & 0x27 | Priority | Flips;)
-      liess sich per Pixel-Vergleich (Screenshot vs. Rohdaten) als Ursache
-      dafuer entlarven, dass SPR_HFLIP an der Waffen-Ruecksto/Heck-Waffe nie
-      ankam — Verdacht: cc900 handhabt die verschachtelte u8/int-Bitoperation
-      in einem einzigen Ausdruck falsch (aehnliche Klasse Compiler-Fallstrick
-      wie die (s32)-Cast- und Linksshift-Bugs, siehe CLAUDE.md). Aufgeteilt in
-      einzelne Schritte mit expliziten u8-Zwischenwerten behebt es. */
+   /* The original one-line version (*(theSprite+1) = *(theSprite+1) & 0x27
+      | Priority | Flips;) turned out, by comparing a screenshot against
+      the raw data, to be why SPR_HFLIP never reached the rear weapon:
+      cc900 appears to mishandle the nested u8/int bit operation in a
+      single expression - the same class of compiler trap as the (s32) cast
+      and left-shift bugs. Splitting it into single steps with explicit u8
+      intermediates fixes it. */
    kept   = (u8)(*(theSprite+1) & 0x27u);
    merged = (u8)(kept | Priority);
    merged = (u8)(merged | Flips);
@@ -595,18 +594,18 @@ void SetSpritePosition(u8 SpriteNo, u8 XPos, u8 YPos) {
 //      XPos - X Position (0 to 255)
 //      YPos - Y Position (0 to 255)
 //////////////////////////////////////////////////////////////////////////////
-   /* 25.07.2026 OAM-Optimierung (HW-fps), zwei Hebel in der HEISSESTEN Routine
-      (fast jedes Sprite laeuft jeden Frame hier durch):
-      1. EIN 16-Bit-Wort statt zwei Einzelbytes -> halbe Bus-Transaktionen.
-      2. DIRTY-CHECK gegen einen RAM-Positionscache: hat sich die Position seit
-         dem letzten Frame nicht geaendert, entfaellt der VRAM-Zugriff GANZ.
-         RAM-Lesen ist billig und unkontendiert, der OAM-Schreibzugriff nicht.
-      Unterschied zum gescheiterten Schatten-OAM (24.07.): das hier schreibt
-      NIE MEHR als vorher, nur weniger - stehende/langsame Sprites (Schiff bei
-      losgelassenem Pad, ruhende Gegner) kosten dann gar nichts.
-      Sicher, weil jeder Zeichenpfad nach einem UnsetSprite einen VOLLEN Redraw
-      erzwingt (last_snum=0 / g_ship_last_meta=0xFF) - SetSprite schreibt immer
-      und zieht den Cache nach. */
+   /* OAM optimisation, two levers in the HOTTEST routine (nearly every
+      sprite passes through here every frame):    1. ONE 16-bit word
+      instead of two single bytes -> half the bus transactions.    2. A
+      DIRTY CHECK against a RAM position cache: if the position has not
+      changed       since the last frame, the VRAM access is skipped
+      ENTIRELY. Reading RAM is       cheap and uncontended; the OAM write
+      is not.    The difference from the failed shadow OAM: this NEVER
+      writes more than before,    only less - stationary or slow sprites
+      (the ship with the pad released, resting    enemies) then cost
+      nothing at all.    Safe, because every drawing path forces a FULL
+      redraw after an UnsetSprite    (last_snum=0 / g_ship_last_meta=0xFF)
+      - SetSprite always writes and updates the    cache. */
    u16 *w = (u16 *)(SPRITE_RAM + (SpriteNo * 4));
    u16 hi = (u16)((u16)YPos << 8);
    u16 xy = (u16)((u16)XPos | hi);

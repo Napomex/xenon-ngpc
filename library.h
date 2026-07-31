@@ -195,7 +195,7 @@ void PrintHex( u8 Plane, u8 PaletteNo, u8 x, u8 y, u16 Value, u8 Len);
 void PrintHex2(u8 Plane, u8 PaletteNo, u8 x, u8 y, u32 Value, u8 Len);
 void PrintString(u8 Plane, u8 Palette, u8 XPos, u8 YPos, const char * theString);
 
-extern u16 g_oam_pos_shadow[64];   /* 25.07.2026: Positions-Schreibcache, siehe SetSpritePosition */
+extern u16 g_oam_pos_shadow[64];   /* position write cache, see SetSpritePosition */
 void SetSprite(u8 SpriteNo, u16 TileNo, u8 Chain, u8 XPos, u8 YPos, u8 PaletteNo);
 void SetSpritePosition(u8 SpriteNo, u8 XPos, u8 YPos);
 
