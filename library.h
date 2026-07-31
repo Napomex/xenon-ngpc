@@ -197,6 +197,9 @@ void PrintString(u8 Plane, u8 Palette, u8 XPos, u8 YPos, const char * theString)
 
 extern u16 g_oam_pos_shadow[64];   /* position write cache, see SetSpritePosition */
 void SetSprite(u8 SpriteNo, u16 TileNo, u8 Chain, u8 XPos, u8 YPos, u8 PaletteNo);
+/* SetSprite plus SpriteControl in one pass, Ctrl = Priority | Flips. Saves a
+   far call and an OAM read-modify-write per sprite - see library.c. */
+void SetSpriteEx(u8 SpriteNo, u16 TileNo, u8 Chain, u8 XPos, u8 YPos, u8 PaletteNo, u8 Ctrl);
 void SetSpritePosition(u8 SpriteNo, u8 XPos, u8 YPos);
 
 s32 Multiply32bit(s32 Value1, s32 Value2);

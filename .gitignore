@@ -45,3 +45,5 @@ PNG/Map/Tiles_*_[0-9]*.h
 compile.bat
 CLAUDE.md
 PNG/Map/*.md
+
+xenon.asm

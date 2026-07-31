@@ -521,6 +521,41 @@ void SetWindowColor(u16 Col) {
    SetSpritePosition() for the dirty check. */
 u16 g_oam_pos_shadow[64];
 
+/* SetSprite + SpriteControl in ONE pass.
+   Almost every draw site called the two back to back, and the second call
+   READ BACK the very control byte the first had just written, masked it and
+   wrote it again - a far call plus an OAM read-modify-write for a value that
+   was already known at the call site. OAM sits in the K2GE range, where a
+   single access is wait-stated (measured on silicon: VWR < MEM), so this is
+   paid for twice over.
+   Ctrl is Priority | Flips exactly as passed to SpriteControl(). The
+   resulting byte is identical to what the pair produced: bit 0 = tile bit 8,
+   bits 1-2 = chaining, bits 3-4 = priority, bits 6-7 = flips. Bit 5 was
+   preserved by SpriteControl's 0x27 mask, but SetSprite had just cleared it
+   in the same breath - so nothing is lost.
+   SetSprite() and SpriteControl() stay, for the sites that really only
+   change one of the two. */
+void SetSpriteEx(u8 SpriteNo, u16 TileNo, u8 Chain, u8 XPos, u8 YPos,
+                 u8 PaletteNo, u8 Ctrl) {
+   u8 * theSprite    = SPRITE_RAM + (SpriteNo * 4);
+   u8 * theSpriteCol = SPRITE_COLOUR + SpriteNo;
+   u16 *w = (u16 *)theSprite;
+   u16 ctl, lo, hi;
+
+   ctl = (u16)Ctrl;
+   if (Chain) ctl = (u16)(ctl | 6u);      /* h and v chaining */
+   ctl = (u16)(ctl | (TileNo >> 8));      /* tile bit 8 */
+
+   lo = (u16)(TileNo & 0x00FFu);
+   hi = (u16)(ctl << 8);
+   w[0] = (u16)(lo | hi);
+   hi   = (u16)((u16)YPos << 8);
+   w[1] = (u16)((u16)XPos | hi);
+   g_oam_pos_shadow[SpriteNo] = w[1];     /* keep the position cache up to date */
+
+   *theSpriteCol = PaletteNo;
+}
+
 void SetSprite(u8 SpriteNo, u16 TileNo, u8 Chain, u8 XPos, u8 YPos, u8 PaletteNo) {
 //////////////////////////////////////////////////////////////////////////////
 // SetSprite

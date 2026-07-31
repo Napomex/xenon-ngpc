@@ -263,11 +263,24 @@ static s16 fps_spd_s(s16 v) {
 
 /* Ship speed: PLAYER_SPEED_STEP/16 px per frame via a subpixel
    accumulator. */
-#define PLAYER_SPEED_STEP 16u   /* Base = DOS speed level 0 = 3 px/tick = 3:1 against the scroll (1 px/tick). Here: 16/16 = 1 px/frame against a scroll of 1 px per 3 frames = 0.333, so 3:1 as in the original. */
+/* 31.07.2026: 16 -> 14. Recalculated against the DOS original
+   (docs/formats/timing.md): there the stages are 3/6/9 px per tick at 18.2
+   Hz and FULL resolution. Converted to half resolution and 20 fps that is
+   1.363 px/frame in stage 0 - we had 1.500, so +10.1 %. The error was not
+   in the ship but in the SCROLL: 1 px every 3 frames is 10.0 px/s, the
+   original has 9.1. The ship-to- scroll ratio of 3:1 was exactly right,
+   only the base was too high. Changing the scroll would drag everything
+   along with it (spawn triggers, paths, fire rates), so only the ship is
+   adjusted - the ratio becomes 2.6:1 instead of 3:1. 14 is the next whole
+   number and hits within -3.7 % at 20 fps (15 would be +5.5 %, 16 was
+   +10.1 %). Measured against 20 fps, because that is the default mode. */
+#define PLAYER_SPEED_STEP 14u
 /* Speedup pickup (DOS pickup type 0, "S"): each stage raises the ship
    speed (g_tune_speed) by PLAYER_SPEED_STAGE_STEP, capped at MAX. Base 16
    + stage*16 -> 16/32/48 = DOS levels 0/1/2 = exactly 3/6/9 px/tick. */
-#define PLAYER_SPEED_STAGE_STEP 16u   /* +1 px per frame per stage */
+/* Same as the base: in the original the stages are 3/6/9 px per tick, so
+   multiples of the base, not base plus a fixed increment. */
+#define PLAYER_SPEED_STAGE_STEP 14u
 #define PLAYER_SPEED_STAGE_MAX  2u    /* 3 levels (0/1/2) as in the original */
 
 /* Reverse flight (hold DOWN at the lower movement limit): a budget in
@@ -311,7 +324,7 @@ static s16 fps_spd_s(s16 v) {
    spr_tile_vram_init() for which physical VRAM ranges are actually free -
    two obvious-looking ranges belong to the HUD bar system and picking them
    breaks the life bar. */
-#define SPR_TILE_COUNT 332u   
+#define SPR_TILE_COUNT 326u   
 #define SPR_S_THRUST_HEAD 155u  /* Head of the 2-frame thruster animation. Forward thrust reuses the same graphic via SPR_VFLIP. */
 #define SPR_S_DIGIT0   37u   /* 37-46: digits 0-9 */
 #define SPR_S_ENEMY0   47u   /* 47-54: 8 animation frames of the enemy (head 47, currently unused) */
@@ -515,6 +528,9 @@ static const u8 lvl_tile_remap_B[LVL_TILE_DATA_COUNT] = {
 
 
 
+
+
+
 /* Active segment (0=A, 1=B) - set by lvl1_select_segment(), read by
    lvl1_put_cell / mapobj_apply_row / anim_update / build_lvl1. */
 static const u16 *g_lvl_tile_used;   /* u16 because raw indices go up to 293 */
@@ -528,8 +544,8 @@ static u16       g_lvl_tile_used_count;
    worked    inside the shop. Verified over 3387 row/section combinations.
    Lead: 40 rows back, 34 ahead. */
 #define LVL1_TERR_SEC_COUNT 4u
-#define LVL1_TERR_ZONE 183u
-static const u16 lvl1_terr_sec_row[LVL1_TERR_SEC_COUNT] = { 0u, 125u, 169u, 258u };
+#define LVL1_TERR_ZONE 189u
+static const u16 lvl1_terr_sec_row[LVL1_TERR_SEC_COUNT] = { 0u, 125u, 163u, 258u };
 
 static const u16 lvl1_terr_used[LVL1_TERR_SEC_COUNT][LVL1_TERR_ZONE] = {
   {  /* section 0 */
@@ -544,49 +560,49 @@ static const u16 lvl1_terr_used[LVL1_TERR_SEC_COUNT][LVL1_TERR_ZONE] = {
     330, 331, 332, 333, 334, 335, 336, 337, 338, 339, 340, 341, 342, 343, 344, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
   },
   {  /* section 1 */
     0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
     16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
     32, 33, 34, 35, 36, 37, 38, 39, 40, 66, 67, 77, 78, 91, 92, 93,
-    94, 111, 112, 113, 114, 119, 120, 121, 56, 57, 58, 59, 60, 61, 62, 63,
+    94, 113, 114, 121, 122, 129, 130, 0, 56, 57, 58, 59, 60, 61, 62, 63,
     64, 65, 75, 76, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90,
-    163, 164, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 122, 127,
-    128, 129, 130, 161, 162, 165, 166, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    163, 164, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 208, 209, 210, 211, 212, 213, 214, 326, 327, 328, 329,
     330, 331, 332, 333, 334, 335, 336, 337, 338, 339, 340, 341, 342, 343, 344, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
   },
   {  /* section 2 */
-    0, 1, 2, 95, 96, 5, 6, 97, 98, 99, 100, 101, 102, 103, 104, 105,
-    106, 17, 18, 107, 108, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+    0, 1, 2, 95, 96, 5, 6, 7, 8, 9, 10, 11, 12, 97, 98, 99,
+    100, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
     32, 33, 34, 35, 36, 37, 38, 39, 40, 66, 67, 77, 78, 91, 92, 93,
-    94, 111, 112, 113, 114, 119, 120, 121, 56, 57, 58, 59, 60, 61, 62, 63,
+    94, 113, 114, 121, 122, 129, 130, 101, 56, 57, 58, 59, 60, 61, 62, 63,
     64, 65, 75, 76, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90,
-    163, 164, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 122, 127,
-    128, 129, 130, 161, 162, 165, 166, 109, 110, 115, 116, 117, 118, 123, 124, 125,
-    126, 131, 132, 133, 134, 135, 136, 139, 143, 144, 145, 146, 326, 327, 328, 329,
-    330, 331, 332, 333, 334, 335, 336, 337, 338, 339, 340, 341, 342, 343, 344, 147,
-    148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 167, 168, 181,
-    182, 183, 184, 295, 296, 297, 298, 299, 300, 301, 302, 303, 304, 305, 306, 307,
-    308, 309, 310, 0, 0, 0, 0,
+    163, 164, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 102, 103,
+    104, 105, 106, 107, 108, 109, 110, 111, 112, 115, 116, 117, 118, 119, 120, 123,
+    124, 125, 126, 127, 128, 131, 132, 210, 211, 133, 134, 135, 326, 327, 328, 329,
+    330, 331, 332, 333, 334, 335, 336, 337, 338, 339, 340, 341, 342, 343, 344, 136,
+    139, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157,
+    158, 159, 160, 161, 162, 165, 166, 167, 168, 181, 182, 183, 184, 295, 296, 297,
+    298, 299, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310,
   },
   {  /* section 3 */
-    0, 215, 216, 95, 96, 217, 218, 97, 98, 99, 100, 101, 102, 103, 104, 105,
-    106, 219, 220, 107, 108, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230, 231,
-    232, 233, 234, 235, 236, 237, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247,
-    248, 111, 112, 113, 114, 119, 120, 121, 249, 250, 251, 252, 253, 254, 255, 256,
-    257, 258, 259, 260, 261, 262, 263, 264, 265, 266, 267, 268, 269, 270, 271, 272,
-    273, 274, 169, 170, 275, 276, 277, 278, 175, 176, 279, 280, 179, 180, 122, 127,
-    128, 129, 130, 161, 162, 165, 166, 109, 110, 115, 116, 117, 118, 123, 124, 125,
-    126, 131, 132, 133, 134, 135, 136, 139, 143, 144, 145, 146, 281, 282, 283, 284,
-    285, 286, 287, 288, 289, 290, 291, 292, 293, 294, 311, 312, 313, 314, 315, 147,
-    148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 167, 168, 181,
-    182, 183, 184, 295, 296, 297, 298, 299, 300, 301, 302, 303, 304, 305, 306, 307,
-    308, 309, 310, 316, 317, 318, 319,
+    0, 215, 216, 95, 96, 217, 218, 219, 220, 221, 222, 223, 224, 97, 98, 99,
+    100, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239,
+    240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255,
+    256, 113, 114, 121, 122, 129, 130, 101, 257, 258, 259, 260, 261, 262, 263, 264,
+    265, 266, 267, 268, 269, 270, 271, 272, 273, 274, 275, 276, 277, 278, 279, 280,
+    281, 282, 169, 170, 283, 284, 285, 286, 175, 176, 287, 288, 179, 180, 102, 103,
+    104, 105, 106, 107, 108, 109, 110, 111, 112, 115, 116, 117, 118, 119, 120, 123,
+    124, 125, 126, 127, 128, 131, 132, 289, 290, 133, 134, 135, 291, 292, 293, 294,
+    311, 312, 313, 314, 315, 316, 317, 318, 319, 320, 321, 322, 323, 324, 325, 136,
+    139, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157,
+    158, 159, 160, 161, 162, 165, 166, 167, 168, 181, 182, 183, 184, 295, 296, 297,
+    298, 299, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310,
   },
 };
 
@@ -638,7 +654,7 @@ static const u8 lvl1_terr_remap[LVL1_TERR_SEC_COUNT][LVL_TILE_DATA_COUNT] = {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0,
   },
   {  /* section 1 */
     0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
@@ -647,11 +663,11 @@ static const u8 lvl1_terr_remap[LVL1_TERR_SEC_COUNT][LVL_TILE_DATA_COUNT] = {
     0, 0, 0, 0, 0, 0, 0, 0, 56, 57, 58, 59, 60, 61, 62, 63,
     64, 65, 41, 42, 0, 0, 0, 0, 0, 0, 0, 66, 67, 43, 44, 68,
     69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 45, 46, 47, 48, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 49,
-    50, 51, 52, 0, 0, 0, 0, 53, 54, 55, 94, 0, 0, 0, 0, 95,
-    96, 97, 98, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 99, 100, 80, 81, 101, 102, 0, 0, 82, 83, 84, 85, 86, 87, 88,
+    0, 49, 50, 0, 0, 0, 0, 0, 0, 51, 52, 0, 0, 0, 0, 0,
+    0, 53, 54, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 80, 81, 0, 0, 0, 0, 82, 83, 84, 85, 86, 87, 88,
     89, 90, 91, 92, 93, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     117, 118, 119, 120, 121, 122, 123, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -687,29 +703,29 @@ static const u8 lvl1_terr_remap[LVL1_TERR_SEC_COUNT][LVL_TILE_DATA_COUNT] = {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0,
   },
   {  /* section 2 */
-    0, 1, 2, 0, 0, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 17, 18, 0, 0, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+    0, 1, 2, 0, 0, 5, 6, 7, 8, 9, 10, 11, 12, 0, 0, 0,
+    0, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
     32, 33, 34, 35, 36, 37, 38, 39, 40, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 56, 57, 58, 59, 60, 61, 62, 63,
     64, 65, 41, 42, 0, 0, 0, 0, 0, 0, 0, 66, 67, 43, 44, 68,
     69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 45, 46, 47, 48, 3,
-    4, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 19, 20, 103, 104, 49,
-    50, 51, 52, 105, 106, 107, 108, 53, 54, 55, 94, 109, 110, 111, 112, 95,
-    96, 97, 98, 113, 114, 115, 116, 117, 118, 0, 0, 119, 0, 0, 0, 120,
-    121, 122, 123, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155,
-    156, 99, 100, 80, 81, 101, 102, 157, 158, 82, 83, 84, 85, 86, 87, 88,
-    89, 90, 91, 92, 93, 159, 160, 161, 162, 0, 0, 0, 0, 0, 0, 0,
+    4, 13, 14, 15, 16, 55, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103,
+    104, 49, 50, 105, 106, 107, 108, 109, 110, 51, 52, 111, 112, 113, 114, 115,
+    116, 53, 54, 117, 118, 121, 122, 123, 143, 0, 0, 144, 0, 0, 0, 145,
+    146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161,
+    162, 163, 164, 80, 81, 165, 166, 167, 168, 82, 83, 84, 85, 86, 87, 88,
+    89, 90, 91, 92, 93, 169, 170, 171, 172, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 119, 120, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 163, 164, 165, 166, 167, 168, 169, 170, 171,
-    172, 173, 174, 175, 176, 177, 178, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 173, 174, 175, 176, 177, 178, 179, 180, 181,
+    182, 183, 184, 185, 186, 187, 188, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133,
     134, 135, 136, 137, 138, 139, 140, 141, 142, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -736,7 +752,7 @@ static const u8 lvl1_terr_remap[LVL1_TERR_SEC_COUNT][LVL_TILE_DATA_COUNT] = {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0,
   },
   {  /* section 3 */
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -745,23 +761,21 @@ static const u8 lvl1_terr_remap[LVL1_TERR_SEC_COUNT][LVL_TILE_DATA_COUNT] = {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3,
-    4, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 19, 20, 103, 104, 49,
-    50, 51, 52, 105, 106, 107, 108, 53, 54, 55, 94, 109, 110, 111, 112, 95,
-    96, 97, 98, 113, 114, 115, 116, 117, 118, 0, 0, 119, 0, 0, 0, 120,
-    121, 122, 123, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155,
-    156, 99, 100, 0, 0, 101, 102, 157, 158, 82, 83, 0, 0, 0, 0, 88,
-    89, 0, 0, 92, 93, 159, 160, 161, 162, 0, 0, 0, 0, 0, 0, 0,
+    4, 13, 14, 15, 16, 55, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103,
+    104, 49, 50, 105, 106, 107, 108, 109, 110, 51, 52, 111, 112, 113, 114, 115,
+    116, 53, 54, 117, 118, 121, 122, 123, 143, 0, 0, 144, 0, 0, 0, 145,
+    146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161,
+    162, 163, 164, 0, 0, 165, 166, 167, 168, 82, 83, 0, 0, 0, 0, 88,
+    89, 0, 0, 92, 93, 169, 170, 171, 172, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 1, 2, 5, 6, 17, 18, 21, 22, 23,
-    24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
-    40, 41, 42, 43, 44, 45, 46, 47, 48, 56, 57, 58, 59, 60, 61, 62,
-    63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78,
-    79, 80, 81, 84, 85, 86, 87, 90, 91, 124, 125, 126, 127, 128, 129, 130,
-    131, 132, 133, 134, 135, 136, 137, 163, 164, 165, 166, 167, 168, 169, 170, 171,
-    172, 173, 174, 175, 176, 177, 178, 138, 139, 140, 141, 142, 179, 180, 181, 182,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 1, 2, 5, 6, 7, 8, 9, 10, 11,
+    12, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+    32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47,
+    48, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70,
+    71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 84, 85, 86, 87, 90,
+    91, 119, 120, 124, 125, 126, 127, 173, 174, 175, 176, 177, 178, 179, 180, 181,
+    182, 183, 184, 185, 186, 187, 188, 128, 129, 130, 131, 132, 133, 134, 135, 136,
+    137, 138, 139, 140, 141, 142, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -785,9 +799,14 @@ static const u8 lvl1_terr_remap[LVL1_TERR_SEC_COUNT][LVL_TILE_DATA_COUNT] = {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0,
   },
 };
+
+
+
 
 
 
@@ -873,7 +892,7 @@ static void lvl1_select_segment(u8 segment) {
    the blank tile (1). Zero reserve. That was a    comparison build, not
    the answer; the answer is the section-wise sprite    loading, which
    keeps only what a section actually needs resident. */
-#define LVL1_ZONE_MAX 183u
+#define LVL1_ZONE_MAX 189u
 static u16 g_lvl_vram[LVL1_ZONE_MAX];
 
 static void lvl1_vram_init(void) {
@@ -882,7 +901,7 @@ static void lvl1_vram_init(void) {
     for (t = 69u;  t <= 127u && i < LVL1_ZONE_MAX; t++) g_lvl_vram[i++] = t;   /* reclaimed font area */
     for (t = 144u; t <= 147u && i < LVL1_ZONE_MAX; t++) g_lvl_vram[i++] = t;
     for (t = 253u; t <= 253u && i < LVL1_ZONE_MAX; t++) g_lvl_vram[i++] = t;
-    for (t = 254u; t <= 341u && i < LVL1_ZONE_MAX; t++) g_lvl_vram[i++] = t;   /* up to 341 (zone 183), sprite pool from 342 */
+    for (t = 254u; t <= 347u && i < LVL1_ZONE_MAX; t++) g_lvl_vram[i++] = t;   /* bis 347 (Zone 189), Sprite-Pool ab 348 */
 }
 
 
@@ -1135,7 +1154,13 @@ static void oam_scrub_step(void) {
    share two places and swallow each other's shots. 6 is harmless against
    the 48-slot OAM pool, especially since they flicker and hold a slot only
    half the time. Original: the drone alone holds 80. */
-#define MAX_WPBULLETS 6
+/* 4 instead of 6, so the same as the main gun (MAX_BULLETS). User report
+   31.07.: "there are more rear shots than front shots". They are also
+   SLOWER - lvl_weapon_bullet_dy[0] is +48 (3 px per frame downwards) while
+   the main gun does 8 px per frame - and therefore take almost three times
+   as long to cross the screen. The larger pool accordingly left more of
+   them standing at once. Measured cost: -2.5 % of frame time. */
+#define MAX_WPBULLETS 4
 /* Enemy firing behaviour. lvl_spawn_fire_rate[] is set for 35 of the 140
    spawns, so this is a real feature, not a stub. Its own small pool,
    separate from player, weapon and map object shots (the original has only
@@ -1254,7 +1279,7 @@ typedef struct {
     u16 weapons_active;                       /* bitmask over LVL_WEAPON_COUNT */
     u8  weapon_cooldown[LVL_WEAPON_COUNT];
 } TPlayer;
-typedef struct { u8 x, y, active; u8 oam; u16 last_snum; } TBullet;   /* oam/last_snum: dynamic pool slot plus flicker */
+typedef struct { u8 x, y, active; u8 oam; u16 last_snum; u8 _pad[2]; } TBullet;   /* oam/last_snum: dynamic pool slot plus flicker */
 /* Group reward pickup: appears at the death position of the last enemy in
    a group and is collected on ship contact via apply_pickup(). Movement is
    SCREEN ABSOLUTE in two phases: 0 = approach (straight from the death
@@ -1274,6 +1299,7 @@ typedef struct {
     u16 spr;
     u8  manim;        /* Metaanim index of the weapon (0xFF = none). Weapon containers show the first cell of each metaanim frame. Without this the icon stood still, because the base sprite is not itself an animation head. */
     u8  oam0, oam1;   /* dynamic, from oam_pool_*() */
+    u8 _pad[2];   /* Zweierpotenz: 30 -> 32 */
 } TPickup;
 
 /* Map object shot: screen-absolute movement as with enemy paths,
@@ -1327,7 +1353,7 @@ typedef struct {
 /* spr added because the boss fires its own projectile (S195). 0 = the
    shared sprite, otherwise an S number. last_snum stays unnecessary: a
    slot keeps its sprite for the lifetime of the shot. */
-typedef struct { u8 active; s16 x_fix, y_fix, vx, vy; u8 oam; u16 spr; } TEnemyBullet;
+typedef struct { u8 active; s16 x_fix, y_fix, vx, vy; u8 oam; u16 spr; u8 _pad[2]; } TEnemyBullet;
 
 /* Enemy: movement along precompiled paths (lvl_path_*, screen absolute,
    independent of scrolling), graphics through its own per-instance sprite
@@ -1370,6 +1396,7 @@ typedef struct {
     u16 last_snum;
     u8  health;       /* hit points, from lvl_spawn_health at spawn */
     u8  flash;        /* remaining frames of hit flash (0 = off), see FLASH_PAL */
+    u8 _pad[14];   /* Zweierpotenz: 50 -> 64 */
 } TEnemy;
 
 /* Multi-part animated enemy - a separate struct rather than overloading
@@ -1541,6 +1568,14 @@ static s8 wpx_dy(u8 w) {
 static u8      g_wpx_oam[LVL_WEAPON_COUNT][WPX_CELLS][2];
 static u16     g_wpx_last[LVL_WEAPON_COUNT][WPX_CELLS];
 static u8      g_wpx_n[LVL_WEAPON_COUNT];          /* cell count last taken */
+/* Precomputed per weapon, because lvl_weapon_spr[w] is constant: the index
+   into the metaanim list and the anim divider. Both used to be re-derived
+   EVERY FRAME - a linear search over LVL_METAANIM_COUNT plus a division.
+   Measured 31.07.: block 22 (drawing the weapon modules) was 7.3 % of the
+   frame as soon as cannon and rapid fire are active. 0xFF = not yet
+   derived, 0xFE = no metaanim. */
+static u8      g_wpx_head[LVL_WEAPON_COUNT];
+static u8      g_wpx_div[LVL_WEAPON_COUNT];
 /* Free-running tick for the cells from index 1 on (the cannon's base keeps
    moving while idle). Deliberately its own counter rather than VBCounter:
    that wraps at 256, and 256 is not a multiple of speed*len, which would
@@ -1872,6 +1907,18 @@ static u16     g_row_map[32];
    30 frames]              060 = clean 30 fps   090 = 20 fps   120 = 15 fps
    The score is hidden while this is on. Set to 0 for release. ===== */
 #define FPS_VBC_DISPLAY 1
+/* ===== OAM_IN_SCORE: instead of the frame rate, show the FEWEST FREE OAM
+   SLOTS of the last measuring window (2 digits on the left). 00 means the
+   pool ran empty, and then sprites are missing from the picture - enemies
+   are still updated and moved, but get no slot and stay invisible.
+   Diagnostic for the user report 31.07. "enemies are missing on the second
+   pass". 0 = normal display. */
+#define OAM_IN_SCORE 0
+/* Bench build: loadout as on the second pass - rapid fire at the highest
+   stage plus the two weapons that have graphics (0 = rear cannon, 2 =
+   front). User report 31.07.: without the weapons the display shows 090,
+   with them 095-097. Measured they cost +27.9 % per frame. */
+#define BENCH_LOADOUT 0
 /* ===== PAL_SELFCHECK: 1 = compare the sprite palettes against their
    source every frame (spr_pal_check). The number of deviations can be
    brought into the HUD via PAL_SHOW_IN_SCORE. Costs 48 word comparisons
@@ -1955,6 +2002,11 @@ static u16     g_row_map[32];
    scene is then identical every frame, so the block toggles give
    REPEATABLE deltas. */
 #define BENCH_DETERM 0    /* off: normal play (no fixed enemy benchmark) */
+/* Number of weapon containers frozen on screen, 0 = off. Together with
+   BENCH_DETERM this reproduces the LEVEL START, the scene where the game
+   really breaks down on hardware (three containers plus overlapping waves).
+   See bench_cont_tick(). */
+#define BENCH_CONT 0
 /* 1 = WORM BAND variant of the deterministic benchmark: no fixed enemies,
    instead all wall worm slots permanently full and the scroll frozen
    inside the band. Measures the one place that really drops below 30 fps. */
@@ -2186,10 +2238,24 @@ static u8 rects_overlap(s16 ax, s16 ay, u8 aw, u8 ah, s16 bx, s16 by, u8 bw, u8 
    check_collisions() call. Resolve it once beforehand (hitzone_rect) and
    only compare rectangles here, instead of searching again for EVERY
    enemy. */
+/* Does the comparison ITSELF rather than forwarding to rects_overlap().
+   This is the innermost function of the frame - every shot against every
+   enemy, every worm segment, every wall crawler. Forwarding cost a second
+   far call with eight more arguments pushed on top of the ten this one
+   already receives, for four comparisons of work. With cart_wait=3 every
+   byte of that argument shuffling is paid for. Semantics unchanged, the
+   comparisons are copied verbatim from rects_overlap().
+   The x pair is tested FIRST: shots and enemies are pre-filtered in y by
+   the caller (BULLET_YFILTER), so x is what actually separates them and
+   the early return hits more often. */
 static u8 rects_overlap_cached(s16 arx, s16 ary, u8 arw, u8 arh,
                                 u8 bx, u8 by, s16 bdx, s16 bdy, u8 bw, u8 bh) {
-    return rects_overlap(arx, ary, arw, arh,
-                          (s16)((s16)bx + bdx), (s16)((s16)by + bdy), bw, bh);
+    s16 rx = (s16)((s16)bx + bdx);
+    s16 ry;
+    if ((s16)(arx + (s16)arw) <= rx || (s16)(rx + (s16)bw) <= arx) return 0u;
+    ry = (s16)((s16)by + bdy);
+    if ((s16)(ary + (s16)arh) <= ry || (s16)(ry + (s16)bh) <= ary) return 0u;
+    return 1u;
 }
 
 /* Ship fallback area 24x24. ship_hitzone_rect() /
@@ -2397,7 +2463,7 @@ static void build_lvl1(u16 start_idx) {
    terrain.    RECOMPUTE COMPLETELY from map.h on every update rather than
    adding to it:    shifted raw indices of existing S numbers show up ONLY
    as a wrongly drawn    sprite, NEVER as a compiler error. */
-#define SPR_RAW_REMAP_SIZE 527u   /* max(spr_raw_used) - SPR_ROM_BASE + 1 */
+#define SPR_RAW_REMAP_SIZE 520u   /* max(spr_raw_used) - SPR_ROM_BASE + 1 */
 static const u16 spr_raw_used[SPR_TILE_COUNT] = {
     345, 346, 347, 348, 349, 350, 351, 352, 353, 354, 355, 356,
     357, 358, 359, 360, 361, 362, 363, 364, 365, 366, 367, 368,
@@ -2421,12 +2487,12 @@ static const u16 spr_raw_used[SPR_TILE_COUNT] = {
     635, 636, 637, 638, 639, 640, 641, 642, 643, 644, 645, 646,
     647, 648, 649, 650, 651, 652, 653, 654, 655, 656, 657, 658,
     659, 660, 661, 662, 663, 664, 665, 666, 667, 668, 669, 670,
-    671, 672, 673, 674, 675, 676, 677, 678, 679, 682, 683, 684,
-    685, 686, 687, 688, 689, 690, 691, 692, 693, 696, 697, 698,
-    699, 700, 701, 702, 703, 704, 705, 706, 707, 710, 711, 712,
-    713, 714, 715, 716, 717, 718, 719, 720, 721, 722, 723, 724,
-    725, 726, 727, 728, 729, 730, 731, 732, 733, 734, 735, 736,
-    737, 738, 739, 740, 741, 742, 743, 744,
+    671, 672, 673, 675, 676, 677, 678, 679, 680, 681, 682, 683,
+    684, 685, 686, 689, 690, 691, 692, 693, 694, 695, 696, 697,
+    698, 699, 700, 703, 704, 705, 706, 707, 708, 709, 710, 711,
+    712, 713, 714, 715, 716, 717, 718, 719, 720, 721, 722, 723,
+    724, 725, 726, 727, 728, 729, 730, 731, 732, 733, 734, 735,
+    736, 737,
 };
 
 static const u16 spr_raw_remap[SPR_RAW_REMAP_SIZE] = {
@@ -2458,12 +2524,15 @@ static const u16 spr_raw_remap[SPR_RAW_REMAP_SIZE] = {
     211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225, 226,
     227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239, 240, 241, 242,
     243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256, 257, 258,
-    259, 260, 261, 262, 263, 264, 265, 266, 267, 268, 269, 270, 271, 272, 0, 0,
-    273, 274, 275, 276, 277, 278, 279, 280, 281, 282, 283, 284, 0, 0, 285, 286,
-    287, 288, 289, 290, 291, 292, 293, 294, 295, 296, 0, 0, 297, 298, 299, 300,
-    301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 312, 313, 314, 315, 316,
-    317, 318, 319, 320, 321, 322, 323, 324, 325, 326, 327, 328, 329, 330, 331,
+    259, 260, 261, 262, 263, 264, 265, 266, 0, 267, 268, 269, 270, 271, 272, 273,
+    274, 275, 276, 277, 278, 0, 0, 279, 280, 281, 282, 283, 284, 285, 286, 287,
+    288, 289, 290, 0, 0, 291, 292, 293, 294, 295, 296, 297, 298, 299, 300, 301,
+    302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 312, 313, 314, 315, 316, 317,
+    318, 319, 320, 321, 322, 323, 324, 325,
 };
+
+
+
 
 
 
@@ -2541,17 +2610,23 @@ static void spr_tile_vram_init(void) {
     for (t = 162u; t <= 176u && i < SPR_SEC_ZONE; t++) g_spr_tile_vram[i++] = t;
     for (t = 243u; t <= 252u && i < SPR_SEC_ZONE; t++) g_spr_tile_vram[i++] = t;
     for (t = 135u; t <= 136u && i < SPR_SEC_ZONE; t++) g_spr_tile_vram[i++] = t;
+    /* 21.07.2026: terrain zone shrunk (only ~134 needed instead of 171).
+       The freed addresses 330-354 go to the sprite pool; lvl1_vram_init()
+       stops early by itself because of `i < LVL1_ZONE_MAX`. */
+    for (t = 348u; t <= 354u && i < SPR_SEC_ZONE; t++) g_spr_tile_vram[i++] = t;
     /* Terrain zone shrunk, so the addresses freed up go to the sprite
        pool. lvl1_vram_init() automatically fills only up to its own limit
        because of `i < LVL1_ZONE_MAX`, so the ranges there stay untouched. */
-    /* The lower bound depends on LVL1_ZONE_MAX: if the terrain zone grows
-       further it MUST move up again (check_vram_budget.mjs reports the
-       overlap immediately). */
-    /* THESE TWO NUMBERS BELONG TOGETHER: if LVL1_ZONE_MAX grows, this
-       lower bound has to move with it, or check_vram_budget.mjs reports
-       the overlap and apply_compaction.py aborts. */
-    /* The pool starts at 342 now, giving it exactly the capacity it needs. */
-    for (t = 342u; t <= 354u && i < SPR_SEC_ZONE; t++) g_spr_tile_vram[i++] = t;
+    /* THESE TWO NUMBERS BELONG TOGETHER: if LVL1_ZONE_MAX grows, the lower
+       bound of the pool has to move with it - otherwise slots belong to
+       the terrain zone AND the pool at the same time. 31.07.2026 (2nd
+       export): zone 183 -> 189 (fourth tentacle frames), pool from 342 ->
+       348. apply_compaction.py inserted the new range 348..354 at the top
+       BUT LEFT THE OLD 342..354 IN PLACE - after that 342..347 belonged to
+       both sides, and the second level section showed a shredded
+       background. Exactly the same mistake as on 30.07. with 338..341. The
+       old range is gone now; the assignment lives exclusively above at
+       348..354. */
     /* The last fixed font zone is dissolved. The compact 8x8 font held it
        permanently but was only needed on the game over screen, which now
        uses the 16x16 alphabet on black. ANYONE REUSING PrintStringCustom()
@@ -2718,19 +2793,29 @@ static void wait_vblank(void) {
    which is what killed the earlier invert flash. The OAM palette
    assignment (0x8C00) is PER SPRITE, so the object that was hit points at
    this slot briefly and no other sprite changes. */
-/* ===== Hit flash through HARDWARE INVERSION =====    Bit 7 of the 2D
-   control register 0x8012 (NEG) inverts the FINISHED PICTURE -    every
-   colour component c ^= 0x0F, across all planes, sprites and the border.
-   What that saves: the white sprite palette 15 and the SCR1 palette 14 of
-   the    boss flash are free again (slot 15 had already started colliding
-   with real    graphics in one export), and the save/restore machinery of
-   the boss body flash    (640 bytes of RAM) disappears.    What has to be
-   understood: NEG is GLOBAL. There is no per-sprite invert. If    anything
-   is hit, the whole picture blinks. Every hit site therefore only sets
-   g_neg_on, and ONE place at the end of the frame writes the register - or
-   it    would be toggled several times per frame. */
+/* ===== The hardware inversion (NEG), and why nothing uses it =====
+   Bit 7 of the 2D control register 0x8012 inverts the FINISHED PICTURE:
+   every colour component c ^= 0x0F, across all planes, sprites and the
+   border. It was tried as the hit flash because it needs no palette slot
+   and no save buffer.
+   It is the WRONG tool: NEG is GLOBAL. There is no per-sprite and no
+   per-cell invert bit, so a single boss hit blinked the whole screen -
+   HUD bar, arena walls and all. Hit flashes are back on palettes (see
+   FLASH_PAL and boss_body_flash()).
+   The mechanism stays in place, unused, for one reason: the ISR writes
+   this bit every VBlank, so the two variables must exist and must be
+   zeroed - see the top of main(). */
 #define K2GE_2D_CONTROL (*(volatile u8*)0x8012u)
 #define K2GE_NEG_BIT    0x80u
+/* Smart bomb: remaining frames of the screen-wide invert flicker. At 20
+   fps, 9 frames is just under half a second. */
+/* OPTION during the game switches the display: 0 = diagnostic (VBlanks per
+   30 frames), 1 = normal SCORE. User request 31.07. - while playing you
+   want to see the score, while measuring the VBlanks. Default is the
+   diagnostic, because the test switches are on anyway. */
+static u8 g_score_view;
+#define SBOMB_FLASH_FRAMES 9u
+static u8 g_sbomb_flash;
 static u8 g_neg_on;    /* set by every hit site, applies to the current frame */
 static u8 g_neg_want;  /* what the next VBlank should write into the register */
 /* Call at the end of the frame. Does NOT write the register itself: the
@@ -2742,7 +2827,7 @@ static void neg_flush(void) {
     g_neg_want = g_neg_on;
     g_neg_on   = 0u;
 }
-#define FLASH_PAL 15u   /* historical only, no longer written */
+#define FLASH_PAL 15u   /* white sprite hit flash, written by spr_pal_load() */
 
 static void spr_pal_load(void) {
     u8 i;
@@ -2760,9 +2845,12 @@ static void spr_pal_load(void) {
        easy to tune. */
     /* The white flash palette is back. It is the ONLY way to make a SINGLE
        object blink - the hardware inversion (NEG) always flips the whole
-       picture and there is no invert bit in the OAM. Division of labour
-       since then: ship, enemies, metasprites and wall crawlers use this
-       palette, ONLY the boss uses NEG (see neg_flush()). */
+       picture and there is no invert bit in the OAM. EVERY sprite hit
+       flash uses this palette - ship, enemies, metasprites, wall crawlers
+       and the boss tentacles. The boss BODY has no sprite, so it flashes
+       through its tilemap palette instead (see boss_body_flash()). NOTHING
+       uses NEG any more; neg_flush() and the register write stay, but only
+       to guarantee the bit is off. */
     spal[(u16)FLASH_PAL * 4u + 0u] = 0x0000u;
     spal[(u16)FLASH_PAL * 4u + 1u] = 0x0FFFu;
     spal[(u16)FLASH_PAL * 4u + 2u] = 0x0FFFu;
@@ -2917,22 +3005,19 @@ static void spr_draw_chain_cell_f(u8 oam, u16 s_num, u8 ddx, u8 ddy, u8 chain_a,
        position. Its b overlay is still chained (delta 0,0) - otherwise, on
        the fastpath that writes only the anchor, it would stay behind at
        the old place. */
-    SetSprite(oam, spr_vram(lvl_sspr_a_idx[n]), chain_a, ddx, ddy, lvl_sspr_a_pal[n]);
+    /* Priority and mirroring go in with the same write (SetSpriteEx), so
+       the extra SpriteControl pass this function used to make for mirrored
+       cells is gone - it was a far call plus an OAM read-modify-write per
+       cell, on the hottest draw path there is. */
+    u8 ctl = (u8)(SPR_FRONT | (flip ? META_FLIP_MASK(flip) : 0u));
+    SetSpriteEx(oam, spr_vram(lvl_sspr_a_idx[n]), chain_a, ddx, ddy, lvl_sspr_a_pal[n], ctl);
     if (lvl_sspr_b_idx[n] != 0u) {
-        SetSprite((u8)(oam + 1u), spr_vram(lvl_sspr_b_idx[n]), 1u, 0u, 0u, lvl_sspr_b_pal[n]);
+        SetSpriteEx((u8)(oam + 1u), spr_vram(lvl_sspr_b_idx[n]), 1u, 0u, 0u, lvl_sspr_b_pal[n], ctl);
     } else {
         /* Set position bytes (0,0) plus chain, then hide - the chain
            continues through this slot. */
-        SetSprite((u8)(oam + 1u), 0u, 1u, 0u, 0u, 0u);
+        SetSpriteEx((u8)(oam + 1u), 0u, 1u, 0u, 0u, 0u, (u8)SPR_FRONT);
         UnsetSprite((u8)(oam + 1u));
-    }
-    /* Only set mirroring when something really is mirrored: SetSprite has
-       already cleared the flip bits, and SpriteControl keeps the chain
-       bits (mask 0x27). At flip==0 the path is therefore unchanged. */
-    if (flip) {
-        u8 fm = META_FLIP_MASK(flip);
-        SpriteControl(oam, SPR_FRONT, fm);
-        if (lvl_sspr_b_idx[n] != 0u) SpriteControl((u8)(oam + 1u), SPR_FRONT, fm);
     }
 }
 static void spr_draw_chain_cell(u8 oam, u16 s_num, u8 ddx, u8 ddy, u8 chain_a) {
@@ -3073,6 +3158,21 @@ static u8 g_mapobj_tick[LVL_MAPOBJ_COUNT];    /* gated: frames spent on the curr
 /* Animations belonging to a gated object: the auto loop skips them. One
    byte per animation, filled once at level start (mapobj_gate_init). */
 static u8 g_anim_is_gated[LVL_ANIM_COUNT];
+/* Compact worklist for the auto loop, built once in mapobj_gate_init().
+   The loop used to walk all LVL_ANIM_COUNT entries every frame and drop out
+   of most of them again - two ROM reads (lvl_anim_head, lvl_anim_speed) plus
+   a RAM read per animation per frame, for a decision that cannot change
+   while the level runs. With cart_wait=3 every instruction byte of that is
+   paid for, and the terrain animations turned out to be 8 % of the frame,
+   not the 0.9 % the wait-free measurement had claimed.
+   g_anim_thresh holds FPS_ASPD(lvl_anim_speed[i]) - constant (a shift by
+   one), so it does not have to be rebuilt when the frame rate is switched.
+   NOT a lazy sentinel init: that failed on hardware once (see the comment
+   that used to sit in anim_update). This is built at a deterministic point
+   that provably runs before the first anim_update(). */
+static u8 g_anim_run[LVL_ANIM_COUNT];
+static u8 g_anim_run_n;
+static u8 g_anim_thresh[LVL_ANIM_COUNT];
 
 /* Collision grid (like g_anim_grid): 0 = no map object cell here,
    otherwise (obj_idx+1). Makes mapobj_hit_test() an O(1) lookup instead of
@@ -3080,6 +3180,15 @@ static u8 g_anim_is_gated[LVL_ANIM_COUNT];
    16 calls per frame (12 ship points plus 4 shots) that was a noticeable
    stutter on real hardware. */
 static u8 g_mapobj_grid[32][20];
+/* What mapobj_gated_draw() drew last: frame number and ring row of the
+   FIRST cell of the object. The function ran through every frame although
+   the frame only changes every few frames - measured 31.07. it was 35.3 %
+   of the frame at the start of the level. It was not entirely pointless:
+   the cells travel into other ring rows with the scroll and have to be
+   redrawn there. That is why it is only skipped when BOTH stayed the same.
+   0xFF = invalid, forces the next draw. */
+static u8 g_mapobj_last_frame[LVL_MAPOBJ_COUNT];
+static u8 g_mapobj_last_ring[LVL_MAPOBJ_COUNT];
 
 /* Wilted map object cells are still stored in lvl_map as a normal, non-
    empty tile (the ROM array does not change when something wilts, only the
@@ -3433,32 +3542,26 @@ static void restore_terrain_row(u8 row) {
    g_anim_grid). No tile data is copied - only map words, since all frame
    tiles are already in VRAM. */
 static void anim_update(void) {
-    u8 i;
-    for (i = 0u; i < (u8)LVL_ANIM_COUNT; i++) {
-        /* Exclude the worm hole animation (head tile 138) from the auto
-           loop - it runs under script control only (g_wormhole_anims).
-           Deliberately WITHOUT a cached index or sentinel: the lazy-init
-           version did not work on hardware. Comparing the head value
-           directly is stateless and foolproof (5 u16 comparisons per
-           frame). */
-        if (lvl_anim_head[i] == 138u) continue;
-        /* Animations of gated objects (the anemone) do NOT run in the auto
-           loop - mapobj_rates_update() ticks them itself. Otherwise both
-           write the same cells and the anemone jitters. Same separation as
-           the worm hole one line above. */
-        if (g_anim_is_gated[i]) continue;
+    u8 i, k;
+    volatile u16 *am2 = SCROLL_PLANE_2, *am1 = SCROLL_PLANE_1;
+    u16 w2c, w1c;
+    /* Worklist instead of "walk all and drop out": the worm hole animation
+       (head tile 138, script controlled through g_wormhole_anims) and the
+       gated ones (the anemone, ticked by mapobj_rates_update - two writers
+       on one cell would make it jitter) are already filtered out of
+       g_anim_run. See the declaration for why this is not the lazy init
+       that failed on hardware. */
+    for (k = 0u; k < g_anim_run_n; k++) {
+        i = g_anim_run[k];
         /* FRAME RATE: counter in half frames, threshold doubled
            (FPS_ATICK/FPS_ASPD, see the block at the top). Terrain
            animations therefore change frames at the same rate per SECOND
            at 20 fps as at 30, just in bigger steps. lvl_anim_speed is
-           2..20, doubled 4..40. */
+           2..20, doubled 4..40 - so tick and threshold both fit in a u8,
+           and the comparison does not need to widen to u16. */
         g_anim_tick[i] = (u8)(g_anim_tick[i] + FPS_ATICK);
-#if TEST_ANIM_SLOW
-        if ((u16)g_anim_tick[i] >= FPS_ASPD((u16)lvl_anim_speed[i] * (u16)TEST_ANIM_SLOW)) {   /* measurement build: slower */
-#else
-        if ((u16)g_anim_tick[i] >= FPS_ASPD(lvl_anim_speed[i])) {
-#endif
-            u8  j, ty, tx, flip2, a_p2, b_p2, a_hw2;
+        if (g_anim_tick[i] >= g_anim_thresh[i]) {
+            u8  j, ty, tx, a_p2, b_p2, a_hw2;
             u16 n, a_i2, b_i2;
             g_anim_tick[i] = 0u;
             g_anim_frame[i]++;
@@ -3481,7 +3584,16 @@ static void anim_update(void) {
             a_hw2 = (a_p2 < 16u) ? g_scr2_pal_map[a_p2] : g_scr2_pal_map[0];
             /* Only the cells actually registered (g_anim_cell_*), rather
                than scanning the whole 32x20 grid - see anim_grid_set(). */
+            /* The two tilemap WORDS are the same for every cell of this
+               animation - only the flip bit differs. They used to be
+               rebuilt inside the loop by two put_cell() calls, each a far
+               call that re-derived the plane base, the palette shift, the
+               VRAM slot and the index ty*32+tx. Hoisted out: per cell only
+               the index, the flip bit and two stores remain. */
+            w2c = (u16)(((u16)a_hw2 << 9u) | g_lvl_vram[a_i2]);
+            w1c = (u16)(((u16)b_p2  << 9u) | g_lvl_vram[b_i2]);
             for (j = 0u; j < g_anim_cell_count[i]; j++) {
+                u16 ci;
                 ty = g_anim_cell_row[i][j];
                 tx = g_anim_cell_col[i][j];
                 /* Do not write cells outside the visible area. The 32-row
@@ -3500,11 +3612,14 @@ static void anim_update(void) {
                    animation cells it may differ; it is here to be
                    measured, not as a certainty. */
                 if ((u8)((u8)(ty << 3) - g_scr1_y) >= (u8)CLIP_Y) continue;
-                flip2 = (g_anim_grid[ty][tx] & 0x80u) ? 1u : 0u;
-                put_cell(SCR_2_PLANE, a_hw2, tx, ty,
-                         g_lvl_vram[a_i2], flip2);
-                put_cell(SCR_1_PLANE, b_p2,  tx, ty,
-                         g_lvl_vram[b_i2], flip2);
+                ci = (u16)((u16)ty * 32u + (u16)tx);
+                if (g_anim_grid[ty][tx] & 0x80u) {
+                    am2[ci] = (u16)(0x8000u | w2c);
+                    am1[ci] = (u16)(0x8000u | w1c);
+                } else {
+                    am2[ci] = w2c;
+                    am1[ci] = w1c;
+                }
             }
         }
     }
@@ -3522,6 +3637,8 @@ static void mapobj_gate_init(void) {
         g_mapobj_run[o]   = 0u;
         g_mapobj_frame[o] = 0u;
         g_mapobj_tick[o]  = 0u;
+        g_mapobj_last_frame[o] = 0xFFu;
+        g_mapobj_last_ring[o]  = 0xFFu;
         if (!lvl_mapobj_gated[o]) continue;
         /* Gate ALL cell animations of the object, not just the anchor
            cell. The anemone consists of TWO animations (lid and feeler);
@@ -3539,21 +3656,67 @@ static void mapobj_gate_init(void) {
               }
           } }
     }
+    /* Worklist for anim_update(). Must be built AFTER g_anim_is_gated is
+       final, so it belongs at the end of exactly this function - which is
+       also the one place guaranteed to run before the first anim_update()
+       (game_start / shop_resume / respawn, see the comment above).
+       TEST_ANIM_SLOW stretches the threshold here rather than per frame. */
+    g_anim_run_n = 0u;
+    for (i = 0u; i < (u8)LVL_ANIM_COUNT; i++) {
+        u16 t;
+        if (lvl_anim_head[i] == 138u) continue;   /* worm hole: script controlled */
+        if (g_anim_is_gated[i]) continue;         /* anemone: ticked by its object */
+#if TEST_ANIM_SLOW
+        t = FPS_ASPD((u16)lvl_anim_speed[i] * (u16)TEST_ANIM_SLOW);
+#else
+        t = FPS_ASPD(lvl_anim_speed[i]);
+#endif
+        if (t > 255u) t = 255u;                   /* guard: the tick is a u8 */
+        g_anim_thresh[i]        = (u8)t;
+        g_anim_run[g_anim_run_n] = i;
+        g_anim_run_n++;
+    }
 }
 
 /* Write one frame number to ALL animated cells of the object - exactly as
    anim_update() does, only per object rather than per animation. The
    animation per cell is already in g_anim_grid (the auto loop uses the
    same source), so no separate cell table is needed here. */
+/* MEASURED 31.07.: this function alone was 35,3 % of the frame at the level
+   start - by far the biggest single item there. Two reasons, both fixed
+   below without touching what it does:
+   1. find_ring_row() is a LINEAR SCAN over 32 ring rows and ran once PER
+      CELL. The cells of one object sit in one or two map rows, so a
+      one-entry cache removes almost every scan. A reverse lookup TABLE was
+      tried before and reverted - it returns the LAST written ring row while
+      the search returns the FIRST, and the wall worms depend on exactly
+      that (see find_ring_row). The cache keeps the search and therefore the
+      semantics; it only avoids repeating it for the same row.
+   2. Two put_cell() FAR CALLS per cell, each re-deriving the plane base,
+      the palette shift and the index. Written directly now, same as in
+      anim_update(). */
 static void mapobj_gated_draw(u8 o, u8 frame) {
     u16 off = lvl_mapobj_cell_off[o];
     u8  cnt = lvl_mapobj_cell_count[o], k;
+    volatile u16 *gm2 = SCROLL_PLANE_2, *gm1 = SCROLL_PLANE_1;
+    u16 zeile_cache = 0xFFFFu;
+    u8  ring_cache  = MAPOBJ_NONE;
+    u8  erste = 1u;
+    g_mapobj_last_frame[o] = frame;
+    g_mapobj_last_ring[o]  = 0xFFu;   /* in case no cell is visible */
     for (k = 0u; k < cnt; k++) {
-        u8  ring = find_ring_row(lvl_mapobj_cell_row[off + k]);
+        u16 mrow = lvl_mapobj_cell_row[off + k];
         u8  tx   = lvl_mapobj_cell_col[off + k];
-        u8  gv, ai, flip2, a_p2, b_p2, a_hw2, f;
+        u8  ring, gv, ai, flip2, a_p2, b_p2, a_hw2, f;
         u16 n, a_i2, b_i2;
+        if (mrow == zeile_cache) {
+            ring = ring_cache;
+        } else {
+            ring = find_ring_row(mrow);
+            zeile_cache = mrow; ring_cache = ring;
+        }
         if (ring == MAPOBJ_NONE) continue;
+        if (erste) { g_mapobj_last_ring[o] = ring; erste = 0u; }
         /* Only draw what is on screen. "In the ring" is far from "visible"
            - the ring is 256 px tall, the screen 136. */
         if ((u8)((u8)(ring << 3) - g_scr1_y) >= (u8)CLIP_Y) continue;
@@ -3572,8 +3735,10 @@ static void mapobj_gated_draw(u8 o, u8 frame) {
         b_p2  = lvl_tile_b_pal[n - 1u];
         }
         a_hw2 = (a_p2 < 16u) ? g_scr2_pal_map[a_p2] : g_scr2_pal_map[0];
-        put_cell(SCR_2_PLANE, a_hw2, tx, ring, g_lvl_vram[a_i2], flip2);
-        put_cell(SCR_1_PLANE, b_p2,  tx, ring, g_lvl_vram[b_i2], flip2);
+        { u16 ci = (u16)((u16)ring * 32u + (u16)tx);
+          u16 fb = flip2 ? 0x8000u : 0u;
+          gm2[ci] = (u16)(fb | ((u16)a_hw2 << 9u) | g_lvl_vram[a_i2]);
+          gm1[ci] = (u16)(fb | ((u16)b_p2  << 9u) | g_lvl_vram[b_i2]); }
     }
 }
 
@@ -3627,6 +3792,25 @@ static void mapobj_rates_update(void) {
             rate = (u8)rate_num;
         }
         if (g_mapobj_wilted[o] || !lvl_mapobj_bullet_on_loop[o]) continue;
+        /* OUT OF SIGHT: do not draw at all. The anemones sit in map rows
+           209..240, but their accumulator starts a run INDEPENDENTLY OF
+           POSITION - so mapobj_gated_draw() already ran every frame at the
+           START OF THE LEVEL and searched, for every cell, for a ring row
+           that does not exist there. find_ring_row() is a linear search
+           over 32 entries and only reports failure after the last one.
+           That is the reason why the anemones slowed down the WHOLE level
+           although they only appear at the end. The test DELIBERATELY
+           works with numbers instead of find_ring_row(): a guard that
+           searches itself measured 48 % MORE EXPENSIVE than no guard at
+           all (it then ran for all 32 objects). The ring always shows the
+           32 map rows g_lvl_row-32 .. g_lvl_row-1, so two comparisons are
+           enough. The accumulator keeps running - the firing phase hangs
+           on it. */
+        { u16 mrow_ = lvl_mapobj_cell_row[lvl_mapobj_cell_off[o]];
+          if (mrow_ >= g_lvl_row || (u16)(mrow_ + 32u) < g_lvl_row) {
+              if (rate) g_mapobj_acc[o] = (u8)(g_mapobj_acc[o] + rate);
+              continue;
+          } }
         if (lvl_mapobj_gated[o]) {
             if (!g_mapobj_run[o]) {
                 /* closed: only the accumulator runs. Frame 0 is already in
@@ -3639,13 +3823,16 @@ static void mapobj_rates_update(void) {
                 g_mapobj_run[o] = 1u;
                 g_mapobj_frame[o] = 0u;
                 g_mapobj_tick[o]  = 0u;
+                g_mapobj_last_frame[o] = 0xFFu;   /* Lauf beginnt -> zeichnen erzwingen */
             }
             /* running: tick the frame, draw, fire on the shot frame */
             /* The frame tick is a DURATION: counter in half frames
                (FPS_ATICK), threshold doubled (FPS_ASPD) - see the frame
                rate block above. */
             { u8 len = mapobj_gate_len(o); u16 spd = FPS_ASPD(mapobj_gate_speed(o));
-              mapobj_gated_draw(o, g_mapobj_frame[o]);
+              if (g_mapobj_last_frame[o] != g_mapobj_frame[o]
+                  || g_mapobj_last_ring[o] != find_ring_row(lvl_mapobj_cell_row[lvl_mapobj_cell_off[o]]))
+                  mapobj_gated_draw(o, g_mapobj_frame[o]);
               g_mapobj_tick[o] = (u8)(g_mapobj_tick[o] + FPS_ATICK);
               if ((u16)g_mapobj_tick[o] >= spd) {
                   g_mapobj_tick[o] = 0u;
@@ -3805,11 +3992,20 @@ static u8 ship_hits_mapobj(u8 x, u8 y) {
    cells pick up the wilt graphic automatically on the next lvl1_put_row()
    call, for instance when the row comes back into view during reverse
    flight. */
+/* POINTS for wall elements. So far the tool exports NO score per map
+   object, so it lives here - with the value from the DOS original
+   (DOS_Version/.../docs/formats/turrets.md, level 1 turret table): BULB,
+   1x1 turret with opening animation, HP 4, score 100. Large and small
+   turrets are the same build type as the anemones and get the same value.
+   Until now they gave NO points at all. As soon as the tool exports a
+   score per object, it belongs there. */
+#define MAPOBJ_POINTS 100u
 static void mapobj_wilt(u8 obj_idx) {
     u16 off;
     u8 count, i;
     if (g_mapobj_wilted[obj_idx]) return;
     g_mapobj_wilted[obj_idx] = 1u;
+    g_score += (u16)MAPOBJ_POINTS;
     off   = lvl_mapobj_cell_off[obj_idx];
     count = lvl_mapobj_cell_count[obj_idx];
     for (i = 0u; i < count; i++) {
@@ -4699,6 +4895,15 @@ static TBoss g_boss;
    taking whole rows. */
 #define BOSS_TILE_LO 141u
 #define BOSS_TILE_HI 181u   /* The body itself is 141..177; 178..181 are the follow-up frames of the two eye animations, which are included in the hit flash and in the removal. */
+/* Tile 196 sits in the map at row 292, column 8 - in the middle of the
+   boss block, next to the tentacle heads 175/176/177 - but lies OUTSIDE
+   the range 141..181. Consequence (user report 31.07.): it did not flash
+   along on a boss hit, stayed put after the boss died AND stayed solid,
+   because the wilt bit is only set for recognised boss cells - you could
+   not fly through it. Deliberately a SINGLE VALUE and not a range
+   extension: 182..195 are the follow-up frames of other animations and
+   have no business in the boss block. */
+#define BOSS_TILE_EXTRA 196u
 static u8  g_boss_remove_pending;                 /* boss defeated -> clear the body tiles at the end of the frame */
 static u8  g_boss_flashing;                       /* latch: the body is currently flashing (save once, restore once) */
 /* The tilemap save buffers (about 649 bytes of RAM) are GONE. Since the
@@ -4884,10 +5089,10 @@ static void boss_draw(void) {
        flash is counted down in boss_body_flash() at the end of the frame,
        where the body is handled too. */
     if (g_boss.flash) {
-        u8 *sc = SPRITE_COLOUR;
+        u8 *sc = SPRITE_COLOUR;   /* cc900: no subscript directly on the cast expression */
         for (k = 0u; k < (u8)BOSS_SEG_COUNT; k++)
-            if (g_boss.oam[k] != OAM_NONE) g_neg_on = 1u;
-        g_neg_on = 1u;
+            if (g_boss.oam[k] != OAM_NONE) sc[g_boss.oam[k]] = (u8)FLASH_PAL;
+        if (g_boss.oam_b != OAM_NONE) sc[g_boss.oam_b] = (u8)FLASH_PAL;
     }
 }
 
@@ -4907,12 +5112,34 @@ static void boss_draw(void) {
    number is in bits 0..8, exactly as lvl1_put_cell() reads it. */
 static u8 boss_cell(u16 map_row, u8 col) {
     u16 t = (u16)(lvl_map[(u16)map_row * (u16)LVL_MAP_W + (u16)col] & 0x01FFu);
-    return (u8)(t >= (u16)BOSS_TILE_LO && t <= (u16)BOSS_TILE_HI);
+    return (u8)((t >= (u16)BOSS_TILE_LO && t <= (u16)BOSS_TILE_HI)
+                || t == (u16)BOSS_TILE_EXTRA);   /* see BOSS_TILE_EXTRA */
 }
+/* Undo the body flash. No save buffer is needed: the original tilemap word
+   of a cell is fully determined by its map entry - g_tile_word_a/b hold
+   exactly what lvl1_put_cell() would write, and the flip bit sits in the
+   map entry itself. That is what removed the two 320-byte save buffers.
+   Deliberately NOT via lvl1_put_cell(): that also resets the animation and
+   map-object grids, which would wipe the eye animation and the wilt bits. */
 static void boss_body_restore(void) {
-    /* Only the latch remains. The tilemap save went away with the move to
-       NEG inversion - the invert changes no tilemap words, so there is
-       nothing to restore. */
+    u8 col, r;
+    volatile u16 *m2 = SCROLL_PLANE_2, *m1 = SCROLL_PLANE_1;
+    if (!g_boss_flashing) return;
+    for (r = 0u; r < 32u; r++) {
+        u16 mr = g_row_map[r];
+        if (mr < (u16)BOSS_BODY_ROW_LO || mr > (u16)BOSS_BODY_ROW_HI) continue;
+        for (col = 0u; col < (u8)LVL_MAP_W; col++) {
+            u16 raw, t, idx, fl;
+            if (!boss_cell(mr, col)) continue;
+            raw = lvl_map[(u16)mr * (u16)LVL_MAP_W + (u16)col];
+            t   = (u16)(raw & 0x01FFu);
+            if (t >= TILE_WORD_N) t = 0u;
+            fl  = (u16)((raw & 0x8000u) ? 0x8000u : 0u);
+            idx = (u16)r * 32u + (u16)col;
+            m2[idx] = (u16)(fl | g_tile_word_a[t]);
+            m1[idx] = (u16)(fl | g_tile_word_b[t]);
+        }
+    }
     g_boss_flashing = 0u;
 }
 static void boss_body_flash(void) {
@@ -4948,16 +5175,28 @@ static void boss_body_flash(void) {
         }
         return;
     }
-    /* The body flash now runs through the HARDWARE inversion (neg_flush())
-       like every other hit. That removes the whole block which switched
-       the boss cells to dedicated flash palettes every frame and had to
-       save their original words first - including two save buffers
-       totalling 640 bytes of RAM and the special case "SCR2 has no free
-       slot, so push the palette number onto bar slot 4". The invert needs
-       no slot and hits body, tentacle and eye at once, with no cell that
-       can be forgotten. */
+    /* The body flash switches the PALETTE NUMBER of the occupied boss cells
+       on both planes and leaves the tile number alone - so only the boss
+       turns bright, not the picture. The hardware inversion (NEG) was tried
+       here and is wrong for this: NEG is global, there is no per-cell or
+       per-sprite invert bit, so a boss hit blinked the whole screen
+       including the HUD bar and the arena walls.
+       Re-applied on EVERY flash frame, because anim_update() rewrites the
+       eye cells in between and would otherwise put the normal palette back. */
     if (!g_boss.flash) return;
-    g_neg_on = 1u;
+    for (r = 0u; r < 32u; r++) {
+        u16 mr = g_row_map[r];
+        if (mr < (u16)BOSS_BODY_ROW_LO || mr > (u16)BOSS_BODY_ROW_HI) continue;
+        for (col = 0u; col < (u8)LVL_MAP_W; col++) {
+            u16 idx;
+            if (!boss_cell(mr, col)) continue;
+            idx = (u16)r * 32u + (u16)col;
+            /* palette field = bits 9..12; tile number and flip bit stay */
+            m2[idx] = (u16)((m2[idx] & (u16)~0x1E00u) | ((u16)BOSS_FLASH_SCR2_PAL << 9u));
+            m1[idx] = (u16)((m1[idx] & (u16)~0x1E00u) | ((u16)BOSS_FLASH_SCR1_PAL << 9u));
+        }
+    }
+    g_boss_flashing = 1u;
     g_boss.flash--;
     if (g_boss.flash == 0u) boss_body_restore();
 }
@@ -5249,6 +5488,10 @@ static void tune_init(void) {
    called once per frame from the main loop, with frame_ref =    VBCounter
    at the start of the frame. */
 static u8 g_vbc_worst;    /* max VBlanks per frame since the last snapshot */
+#if OAM_IN_SCORE
+static u8 g_oam_free_min = 48u;   /* Minimum freier Pool-Slots im laufenden Fenster */
+static u8 g_oam_free_shown = 48u; /* snapshot for the display */
+#endif
 static u8 g_vbc_fcount;   /* frames since the last snapshot */
 static u8 g_fps_shown;
 static u8 g_fps_avg;      /* AVERAGE rather than the worst frame */    /* = 60/vbc_worst, updated about once a second */
@@ -5289,6 +5532,9 @@ static void vbc_stats_reset(void) {
 
 static void fps_tick(u8 frame_ref) {
     u8 vbc = (u8)(VBCounter - frame_ref);   /* the u8 subtraction wraps correctly */
+#if OAM_IN_SCORE
+    if (g_oam_pool_n < g_oam_free_min) g_oam_free_min = g_oam_pool_n;
+#endif
     if (vbc > g_vbc_worst) g_vbc_worst = vbc;
     g_vbc_acc = (u16)(g_vbc_acc + vbc);
     if (++g_vbc_fcount >= 30u) {            /* about 1 s -> snapshot */
@@ -5296,6 +5542,10 @@ static void fps_tick(u8 frame_ref) {
         g_fps_shown  = (u8)(60u / (g_vbc_worst ? g_vbc_worst : 1u));
         g_vbc_worst  = 0u;
         g_vbc_sum    = g_vbc_acc;
+#if OAM_IN_SCORE
+        g_oam_free_shown = g_oam_free_min;   /* Fenster zu Ende: Minimum uebernehmen */
+        g_oam_free_min   = 48u;
+#endif
         /* AVERAGE frame rate. g_fps_shown computes 60/worst frame, so a
            single slip per second drags the display to 15 even when 29 of
            30 frames are clean - which made a measured improvement from 3-4
@@ -5681,6 +5931,7 @@ static void enemies_update(void) {
     for (i = 0u; i < MAX_ENEMIES; i++) {
         u16 len, off;
         u8 anim_len;
+        s16 real_x, real_y;
         if (!g_enemies[i].active) continue;
         g_busy_enemies = 1u;   /* early-out: see g_busy_* */
 
@@ -5705,8 +5956,16 @@ static void enemies_update(void) {
             g_enemies[i].frame++;
         }
         if (!g_enemies[i].active) continue;
-        g_enemies[i].x = (u8)(g_enemies[i].spawn_x + (g_enemies[i].x_fix >> 4));
-        g_enemies[i].y = (u8)(g_enemies[i].spawn_y + (g_enemies[i].y_fix >> 4));
+        /* Compute the SIGNED position ONCE and derive the u8 screen
+           position from it. The despawn test below needs the signed value
+           (see its comment) and used to recompute both from spawn_x/y and
+           the 12.4 accumulator - the same two 16-bit additions and two
+           shifts a second time, per enemy per frame. Nothing in between
+           touches spawn_x/y or x_fix/y_fix. */
+        real_x = (s16)(g_enemies[i].spawn_x + (g_enemies[i].x_fix >> 4));
+        real_y = (s16)(g_enemies[i].spawn_y + (g_enemies[i].y_fix >> 4));
+        g_enemies[i].x = (u8)real_x;
+        g_enemies[i].y = (u8)real_y;
 
         if (!g_enemies[i].is_static) {
             anim_len = g_enemies[i].c_anim_len;         /* from the cache */
@@ -5737,8 +5996,6 @@ static void enemies_update(void) {
            and only count as "off"    beyond a margin of 16 px (a typical
            sprite size). */
         {
-            s16 real_x = (s16)(g_enemies[i].spawn_x + (g_enemies[i].x_fix >> 4));
-            s16 real_y = (s16)(g_enemies[i].spawn_y + (g_enemies[i].y_fix >> 4));
             if (real_x <= -16 || real_x >= (s16)SCR_W || real_y <= -16 || real_y >= (s16)CLIP_Y) {
                 g_enemies[i].off_timer++;
                 if (g_enemies[i].off_timer >= g_f_grace_enemy) {
@@ -5914,6 +6171,7 @@ static void metaenemies_update(void) {
     u8 i;
     for (i = 0u; i < (u8)MAX_METAENEMIES; i++) {
         u16 len, off;
+        s16 mreal_x, mreal_y;
         if (!g_metaenemies[i].active) continue;
 
         g_busy_metas = 1u;   /* early-out: see g_busy_* */
@@ -5934,8 +6192,13 @@ static void metaenemies_update(void) {
             g_metaenemies[i].frame++;
         }
         if (!g_metaenemies[i].active) continue;
-        g_metaenemies[i].x = (u8)(g_metaenemies[i].spawn_x + (g_metaenemies[i].x_fix >> 4));
-        g_metaenemies[i].y = (u8)(g_metaenemies[i].spawn_y + (g_metaenemies[i].y_fix >> 4));
+        /* Signed position computed ONCE, u8 derived from it - the
+           despawn test further down needed the same two additions and
+           shifts a second time. Same change as in enemies_update(). */
+        mreal_x = (s16)(g_metaenemies[i].spawn_x + (g_metaenemies[i].x_fix >> 4));
+        mreal_y = (s16)(g_metaenemies[i].spawn_y + (g_metaenemies[i].y_fix >> 4));
+        g_metaenemies[i].x = (u8)mreal_x;
+        g_metaenemies[i].y = (u8)mreal_y;
 
         if (g_metaenemies[i].metaanim != 0xFFFFu) {
             u8 h = (u8)g_metaenemies[i].metaanim;
@@ -5953,9 +6216,7 @@ static void metaenemies_update(void) {
            same u8 wrap problem with slightly negative x/y, and spawn_x/y
            as real s16 rather than an (s8) trick). */
         {
-            s16 real_x = (s16)(g_metaenemies[i].spawn_x + (g_metaenemies[i].x_fix >> 4));
-            s16 real_y = (s16)(g_metaenemies[i].spawn_y + (g_metaenemies[i].y_fix >> 4));
-            if (real_x <= -16 || real_x >= (s16)SCR_W || real_y <= -16 || real_y >= (s16)CLIP_Y) {
+            if (mreal_x <= -16 || mreal_x >= (s16)SCR_W || mreal_y <= -16 || mreal_y >= (s16)CLIP_Y) {
                 g_metaenemies[i].off_timer++;
                 if (g_metaenemies[i].off_timer >= g_f_grace_enemy) {
                     g_metaenemies[i].active = 0u;
@@ -6241,6 +6502,44 @@ static void pickup_spawn_for_group(u8 grp, u8 x, u8 y) {
         return;
     }
 }
+
+/* ===== BENCH_CONT: weapon containers frozen on screen =====
+   The user's real bottleneck is the LEVEL START, where three containers and
+   two or three enemy waves overlap - not the tower band the 31.07.
+   optimisations were measured against, which is why an 18 % emulator gain
+   showed up as 1 % on hardware. This pins BENCH_CONT containers at fixed
+   positions so the load is identical on both sides.
+   Each container costs 2 OAM slots plus a metaanim tick, which is exactly
+   what makes them expensive. Sits down here, not next to bench_determ_tick(),
+   because it needs weapon_manim_of() and reward_icon_for() - both defined
+   further up only from this point on.
+   homing_dx/dy = 0 with a huge homing_frames freezes them in the approach
+   phase: they stay put, keep animating, and never switch state. Positions
+   are kept clear of the ship (PICKUP_GRAB_R is 18 px), or they would be
+   collected and the scene would empty itself. */
+#if BENCH_CONT
+static void bench_cont_tick(void) {
+    u8 i;
+    for (i = 0u; i < (u8)BENCH_CONT && i < (u8)MAX_PICKUPS; i++) {
+        TPickup *p = &g_pickups[i];
+        if (p->active) continue;
+        p->active = 1u;
+        g_busy_pickups = 1u;
+        p->kind  = 3u;                       /* weapon container */
+        p->value = (u16)(1u + i);            /* different weapons -> different metaanims */
+        p->spr   = reward_icon_for(3u, p->value);
+        p->manim = weapon_manim_of((u8)p->value);
+        p->x = (u8)(16u + (u16)i * 56u);
+        p->y = (u8)(24u + (u16)i * 12u);
+        p->x_fix = (s16)((s16)p->x << 4);
+        p->y_fix = (s16)((s16)p->y << 4);
+        p->homing_dx = 0; p->homing_dy = 0;
+        p->homing_frames = 30000u; p->homing_tick = 0u;
+        p->path_frame = 0u; p->dir = 0u; p->state = 0u;
+        p->oam0 = p->oam1 = OAM_NONE;
+    }
+}
+#endif
 
 /* Shared kill path for both shot kills and ship contact kills: the group
    counter is ALWAYS decremented (a dead enemy counts however it died),
@@ -6655,6 +6954,7 @@ typedef struct {
     u8 cell_flip[2];                          /* h-flip per cell (from lvl_map bit 15 - static 138s are not in the animation grid) */
     u8 step, tick;
     u8 pending_spawn;   /* 1 = spawn the worm at step WORMHOLE_WORM_STEP */
+    u8 _pad[2];   /* Zweierpotenz: 14 -> 16 */
 } TWormholeAnim;
 static TWormholeAnim g_wormhole_anims[WORMHOLE_ANIM_SLOTS];
 static u8 g_wallworm_last_exit = 0xFFu;   /* hole used last (against three worms out of the same hole in a row) */
@@ -7364,7 +7664,18 @@ static const s16 lvl_wcrawl_shot_dy[3] = { -30,  0, 30 };
    returns them at on==0). Once    shown it stays shown (the w->shown
    latch), or it would disappear and reappear    on every further upward
    phase. */
-#define WCRAWL_SHOW_Y  16    /* px, one figure height below the top edge */
+/* 31.07.2026, user report "now they really pop into the picture, they
+   should come in smoothly with the scroll": 16 px is a WHOLE figure height
+   - the crawler therefore appeared fully visible in the middle of the
+   screen. In the hidden upward phase it only drifts down by 0.0625
+   px/frame (scroll 0.5 against crawl speed 0.4375), so it needs around 250
+   frames from the edge to 16 - it sits at the top the whole time and then
+   pops. Now 6 px, and in addition it is shown IMMEDIATELY as soon as it
+   runs downwards (dir < 0): then it comes in at 0.9375 px/frame and
+   visibly glides into the picture instead of standing there finished. The
+   sticking that the threshold was originally introduced against only
+   concerns the UPWARD phase - that one stays hidden. */
+#define WCRAWL_SHOW_Y  6     /* px below the top edge, see above */
 
 typedef struct {
     u8  alive;        /* 0 = shot down (and stays that way for the rest of the level) */
@@ -7586,7 +7897,11 @@ static void wcrawls_update(void) {
            at on==0) nor hittable nor able to burst. The crawling above
            continues normally. */
         if (!w->shown) {
-            if (sy < (s16)WCRAWL_SHOW_Y) { w->on = 0u; continue; }
+            /* Visible as soon as it reaches the threshold OR runs
+               downwards - whichever happens first. The direction test is
+               the actual point: in the downward phase it can no longer
+               stick to the edge, so there is no reason to hide it. */
+            if (sy < (s16)WCRAWL_SHOW_Y && w->dir > 0) { w->on = 0u; continue; }
             w->shown = 1u;
             frisch = 1u;
         }
@@ -7838,25 +8153,51 @@ static void wcrawls_collide(s16 srx, s16 sry, u8 srw, u8 srh, u8 ship_vuln) {
 /* SMART BOMB (DOS pickup 18): clears ALL enemies on screen (with points as
    for a normal kill), sweeps away enemy and object shots and empties the
    wall worms. The boss stays, being a special entity. */
+/* 31.07.2026, user request: "like a huge area attack on everything" - the
+   enemies should die EXACTLY as if shot down, so that the cash eggs appear
+   where the enemy was. That is why `active = 0` is no longer set with the
+   score added by hand; instead the NORMAL damage path is called with 255
+   damage: enemy_take_damage / metaenemy_take_damage / worm_seg_hit. Those
+   take care of returning the OAM slot, the group counters, the score AND
+   pickup_spawn_for_group() at the death position - exactly what happens on
+   a kill. The old code bypassed all of that and dropped the rewards.
+   BACKWARDS over the enemies: enemy_killed() can hand out a slot again
+   immediately, forwards would hit a freshly written entry a second time. */
 static void smart_bomb_detonate(void) {
     u8 j, w, k;
-    for (j = 0u; j < (u8)MAX_ENEMIES; j++)
-        if (g_enemies[j].active) {
-            g_score += (u16)lvl_spawn_points[g_enemies[j].spawn_idx];
-            g_enemies[j].active = 0u;
-        }
-    for (j = 0u; j < (u8)MAX_METAENEMIES; j++)
-        if (g_metaenemies[j].active) {
-            g_score += (u16)lvl_spawn_points[g_metaenemies[j].spawn_idx];
-            g_metaenemies[j].active = 0u;
-        }
+    j = (u8)MAX_ENEMIES;
+    while (j-- > 0u)
+        if (g_enemies[j].active) enemy_take_damage(j, 255u);
+    j = (u8)MAX_METAENEMIES;
+    while (j-- > 0u)
+        if (g_metaenemies[j].active) metaenemy_take_damage(j, 255u);
     for (w = 0u; w < (u8)MAX_WORMS; w++)
         if (g_worms[w].active) {
-            for (k = 0u; k < g_worms[w].num_segs; k++) g_worms[w].seg[k].alive = 0u;
-            g_worms[w].active = 0u;
+            k = g_worms[w].num_segs;
+            while (k-- > 0u)
+                if (g_worms[w].seg[k].alive) worm_seg_hit(w, k, 1u);
         }
+    /* Turrets and anemones currently inside the 32-row ring - "a huge area
+       attack on everything" (user request 31.07.). DELIBERATE DEVIATION
+       FROM THE ORIGINAL: there the map-anchored wall growths (type
+       0x50/0x54) are EXEMPT from the smart bomb (docs/formats/damage.md:
+       "also exempt from the smart bomb 1000:2ad9") and survive ramming as
+       well. Here they are meant to die. mapobj_wilt() is the same path as
+       a hit: cells wilt, collision goes away, points are awarded. Objects
+       outside the ring stay untouched, otherwise one smart bomb would
+       clear half a level you have not even seen yet. */
+    for (j = 0u; j < (u8)LVL_MAPOBJ_COUNT; j++) {
+        u16 mrow_ = lvl_mapobj_cell_row[lvl_mapobj_cell_off[j]];
+        if (mrow_ >= g_lvl_row || (u16)(mrow_ + 32u) < g_lvl_row) continue;
+        mapobj_wilt(j);
+    }
     for (j = 0u; j < (u8)MAX_ENEMY_BULLETS; j++)   g_ebullets[j].active = 0u;
     for (j = 0u; j < (u8)MAX_MAPOBJ_BULLETS; j++)  g_mo_bullets[j].active = 0u;
+    /* Screen-wide flash: the NEG bit inverts the FINISHED picture globally
+       - for an area attack that is exactly right, and it is the only
+       effect in the game that justifies it (as a hit flash on individual
+       objects it was wrong, see neg_flush()). */
+    g_sbomb_flash = (u8)SBOMB_FLASH_FRAMES;
 }
 
 /* SUPER NASHWAN POWER: a full, maximally powered weapon loadout for a
@@ -8010,6 +8351,7 @@ typedef struct {
     u8 w;     /* which weapon fired it (index into lvl_weapon_*) */
     s16 vx, vy;   /* its own velocity (1/16 px per frame). The default is lvl_weapon_bullet_dx/dy[w]; homing steers it and the flamer drifts. */
     u16 last_snum;  /* last frame written - animated projectiles (the animation bit in lvl_weapon_bullet_spr) have to be rewritten on every frame change, not just once. */
+    u8 _pad[2];   /* Zweierpotenz: 14 -> 16 */
 } TWpBullet;
 static TWpBullet g_wp_bullets[MAX_WPBULLETS];
 
@@ -8151,7 +8493,16 @@ static void weapon_update(void) {
                check for themselves - so they are not handled through the
                reload tick here. */
             if (beh == (u8)WPB_LASER || beh == (u8)WPB_ELECTRO || beh == (u8)WPB_MINE) continue;
-            if (g_player.weapon_cooldown[i] == 0u || edge) {
+            /* NO MORE TAP BYPASS for the module weapons. On the main gun
+               it is intentional (see there), and the 4-slot pool throttles
+               it: if the pool is full, the press fizzles out. The module
+               weapons had copied the bypass, but set their cooldown
+               independently of it - so on fast tapping one rear shot came
+               out per press while the front shot was swallowed as soon as
+               the front was full. User report 31.07.: "when I tap fire
+               quickly there are more rear shots than front shots". Now
+               they respect their fire rate. */
+            if (g_player.weapon_cooldown[i] == 0u) {
                 u8 wr;
                 /* Frame rate: the tool's trajectory is given in px per
                    frame -> x3/2 at 20 fps, with the correct sign
@@ -8189,6 +8540,17 @@ static void weapon_update(void) {
                    original). The fixed >>1 is now fps_from60() - both
                    rates are in 1/60 frames and are divided by the VBlanks
                    per game frame (see fire_cd). */
+                /* Rear weapon: the same autofire latch as the main gun,
+                   WITHOUT a lower bound of its own. Documented in the DOS
+                   docs (docs/formats/timing.md, autofire 1000:4675): there
+                   is ONE latch [0x8f5b] that ALL weapon entities consume -
+                   so the cannon does get faster with the rapid fire
+                   upgrade. A limit to lvl_weapon_rate[0] built in on
+                   31.07. contradicted that and has been removed again. The
+                   observation "too many rear shots" had two other causes,
+                   both fixed: the tap bypass (the original has none -
+                   "tapping fire with autofire 1 releases nothing") and
+                   MAX_WPBULLETS 6 against MAX_BULLETS 4. */
                 if (i == 0u) wr = lvl_firerate_stage[g_player.firerate_stage];
                 else         wr = lvl_weapon_rate[i];
                 g_player.weapon_cooldown[i] = (u8)fps_from60((u16)wr);
@@ -8756,6 +9118,14 @@ static void check_collisions(void) {
         s16 srx, sry;
         u8  srw, srh;
         ship_hitzone_rect(&srx, &sry, &srw, &srh);
+        /* RAMMING SCORES POINTS - in the original just like a kill.
+           Documented in DOS_Version/.../docs/formats/damage.md, "Enemy
+           contact": the ram kill runs through the enemy's OWN hit handler
+           with damage 0x7f, "the whole snake dies (and scores/pays out
+           normally)". And entities.md: the score hangs on DEATH (entity
+           +0x34, "added to the score on death"), not on the cause. Until
+           31.07. this said award_points = 0 with the reasoning "ramming
+           never gave points" - that was wrong. */
         { TEnemy *e = &g_enemies[0];   /* pointer iteration, see the shot loop */
         for (j = 0; j < MAX_ENEMIES; j++, e++) {
             if (!e->active || e->y >= CLIP_Y) continue;
@@ -8764,7 +9134,7 @@ static void check_collisions(void) {
                                       e->hz_w, e->hz_h)) {
                 u8 dmg = contact_damage_for(e->spawn_idx);   /* 8, tough 16 */
                 e->active = 0;
-                enemy_killed(j, 0u);
+                enemy_killed(j, 1u);   /* ramming scores points, see below */
                 g_dmg_src=3u; player_damage(dmg);
             }
         } }
@@ -8776,7 +9146,7 @@ static void check_collisions(void) {
                                       m->hz_w, m->hz_h)) {
                 u8 dmg = contact_damage_for(m->spawn_idx);   /* 8, tough 16 */
                 m->active = 0;
-                metaenemy_killed(j, 0u);
+                metaenemy_killed(j, 1u);   /* ramming scores points, see below */
                 g_dmg_src=4u; player_damage(dmg);
             }
         } }
@@ -9074,42 +9444,50 @@ static void draw_sprites(void) {
        spr_draw_s_single: the shot sprite has no b overlay. */
     if (!PROF_OFF(20) && g_busy_mobullets) {   /* collective sub-block 20 plus early-out */
     u8 still = 0u;
-    for (i = 0; i < MAX_MAPOBJ_BULLETS; i++) {
-        u8 idx = i;
-        if (g_mo_bullets[idx].active) still = 1u;
-        if (!g_mo_bullets[idx].active || !FLICKER_VIS(i)) {   /* off phase: release the slot (flicker) */
-            if (g_mo_bullets[idx].oam != OAM_NONE) {
-                UnsetSprite(g_mo_bullets[idx].oam);
-                oam_pool_free(g_mo_bullets[idx].oam);
-                g_mo_bullets[idx].oam = OAM_NONE;
-                g_mo_bullets[idx].last_snum = 0u;
+    /* POINTER ITERATION. This loop reached through g_mo_bullets[idx] about
+       fourteen times per entry, and sizeof(TMapobjBullet) is 18 - not a power
+       of two, so cc900 emits a 16-bit muls (26 states) for every one.
+       Two alternatives were MEASURED and are worse: padding the struct to 32
+       costs more than it saves (the field displacements leave the 8-bit range,
+       +1,2 %), and the same pointer change in mapobj_bullets_update() LOSES
+       (+1,9 %) because that loop holds far more live values and cc900 spills.
+       Here it wins: -2,5 %. */
+    TMapobjBullet *mb = &g_mo_bullets[0];
+    for (i = 0; i < MAX_MAPOBJ_BULLETS; i++, mb++) {
+        if (mb->active) still = 1u;
+        if (!mb->active || !FLICKER_VIS(i)) {   /* off phase: release the slot (flicker) */
+            if (mb->oam != OAM_NONE) {
+                UnsetSprite(mb->oam);
+                oam_pool_free(mb->oam);
+                mb->oam = OAM_NONE;
+                mb->last_snum = 0u;
             }
             continue;
         }
-        if (g_mo_bullets[idx].oam == OAM_NONE) {
-            g_mo_bullets[idx].oam = oam_pool_alloc();
-            if (g_mo_bullets[idx].oam == OAM_NONE) continue;   /* pool empty, try again next frame */
-            g_mo_bullets[idx].last_snum = 0u;
+        if (mb->oam == OAM_NONE) {
+            mb->oam = oam_pool_alloc();
+            if (mb->oam == OAM_NONE) continue;   /* pool empty, try again next frame */
+            mb->last_snum = 0u;
         }
         {
-            u8 oam = g_mo_bullets[idx].oam;
-            u8 mx = (u8)(g_mo_bullets[idx].x_fix >> 4);
-            u8 my = (u8)(g_mo_bullets[idx].y_fix >> 4);
+            u8 oam = mb->oam;
+            u8 mx = (u8)(mb->x_fix >> 4);
+            u8 my = (u8)(mb->y_fix >> 4);
             /* All map object shots share the same tile, so it is
                practically always the same as last frame - write the
                position only. */
-            if (g_mo_bullets[idx].spr == g_mo_bullets[idx].last_snum) {
+            if (mb->spr == mb->last_snum) {
                 SetSpritePosition(oam, mx, my);
             } else {
-                spr_draw_s_single(oam, g_mo_bullets[idx].spr, mx, my);
+                spr_draw_s_single(oam, mb->spr, mx, my);
                 /* Mirroring and priority, see MAPOBJ_SHOT_*. ONLY here in
                    the full path: SetSpritePosition above writes only x/y,
                    so the control byte survives the fastpath. When a slot
                    is recycled, mapobj_fire sets last_snum to 0, so the
                    next shot necessarily comes through here and picks up
                    its own mirroring and priority. */
-                SpriteControl(oam, g_mo_bullets[idx].prio, g_mo_bullets[idx].flip);
-                g_mo_bullets[idx].last_snum = g_mo_bullets[idx].spr;
+                SpriteControl(oam, mb->prio, mb->flip);
+                mb->last_snum = mb->spr;
             }
         }
     }
@@ -9433,6 +9811,12 @@ static void draw_sprites(void) {
         s8  c_dx[WPX_CELLS], c_dy[WPX_CELLS];
         u8  c_fl[WPX_CELLS];
         u8  cnt = 0u, c;
+        s8  bx, by;
+        /* Skip unpurchased weapons without occupied cells right away.
+           Before, the complete body ran for all ten weapons - stack setup
+           for four fields, release loop, draw loop - although at most two
+           are active. */
+        if (!(g_player.weapons_active & ((u16)1u << w)) && g_wpx_n[w] == 0u) continue;
         if ((g_player.weapons_active & ((u16)1u << w)) && spr != 0u) {
             u16 n = (u16)(spr & 0x01FFu);
             if (spr & 0x1000u) {                 /* metasprite or metaanim */
@@ -9445,12 +9829,22 @@ static void draw_sprites(void) {
                 u16 mi_fire = n, mi_free = n;
                 if (spr & 0x4000u) {
                     u8 h, len;
-                    for (h = 0u; h < (u8)LVL_METAANIM_COUNT; h++)
-                        if (lvl_metaanim_head[h] == n) break;
-                    if (h >= (u8)LVL_METAANIM_COUNT) { cnt = 0u; goto wpx_done; }
+                    /* Derive head index and anim divider ONCE, see
+                       g_wpx_head. lvl_weapon_spr[w] is constant, yet the
+                       search ran every frame. */
+                    if (g_wpx_head[w] == 0xFFu) {
+                        u8 hh;
+                        for (hh = 0u; hh < (u8)LVL_METAANIM_COUNT; hh++)
+                            if (lvl_metaanim_head[hh] == n) break;
+                        if (hh >= (u8)LVL_METAANIM_COUNT) { g_wpx_head[w] = 0xFEu; }
+                        else { g_wpx_head[w] = hh;
+                               g_wpx_div[w] = (u8)fps_anim_div(lvl_metaanim_speed[hh]); }
+                    }
+                    if (g_wpx_head[w] == 0xFEu) { cnt = 0u; goto wpx_done; }
+                    h   = g_wpx_head[w];
                     len = lvl_metaanim_len[h];
                     mi_fire = lvl_metaanim_frames[h][(u8)(g_wp_afrm[w] % len)];
-                    mi_free = lvl_metaanim_frames[h][(u8)((g_wpx_tick / fps_anim_div(lvl_metaanim_speed[h])) % len)];
+                    mi_free = lvl_metaanim_frames[h][(u8)((g_wpx_tick / g_wpx_div[w]) % len)];
                 }
                 if (mi_fire >= (u16)LVL_META_COUNT || mi_free >= (u16)LVL_META_COUNT) {
                     cnt = 0u; goto wpx_done;
@@ -9488,9 +9882,11 @@ wpx_done:
             g_wpx_last[w][c] = 0u;
         }
         g_wpx_n[w] = cnt;
+        /* Depend only on w, but stood as a far call inside the cell loop. */
+        bx = wpx_dx(w); by = wpx_dy(w);
         for (c = 0u; c < cnt; c++) {
-            u8 wx = (u8)(g_player.x + wpx_dx(w) + c_dx[c]);
-            u8 wy = (u8)(g_player.y + wpx_dy(w) + c_dy[c]);
+            u8 wx = (u8)(g_player.x + bx + c_dx[c]);
+            u8 wy = (u8)(g_player.y + by + c_dy[c]);
             if (g_wpx_oam[w][c][0] == OAM_NONE) {
                 g_wpx_oam[w][c][0] = oam_pool_alloc();
                 if (g_wpx_oam[w][c][0] == OAM_NONE) continue;      /* pool empty */
@@ -9557,7 +9953,17 @@ wpx_done:
 #if TEST_FLICKER_ALLBULLETS
         if (!g_wp_bullets[i].active || !FLICKER_VIS(i)) {   /* measurement ROM A: flicker churn, see above */
 #else
-        if (!g_wp_bullets[i].active) {   /* release only on despawn, not every second frame */
+        if (!g_wp_bullets[i].active
+            || (u8)(g_wp_bullets[i].y_fix >> 4) + 8u > (u8)BAR_Y) {
+            /* Do not draw into the HUD bar. The bounds check in the mover
+               only kills at y >= BAR_Y and thus checks the TOP EDGE - an 8
+               px tall sprite then still reaches eight rows into the bar.
+               On the main gun this never shows, it fires upwards; the REAR
+               WEAPON fires downwards (lvl_weapon_bullet_dy[0] = +48). User
+               report 31.07.: "they go into the HUD bar". Only the DRAWING
+               is suppressed, not the shot: it is born at ship y+20 and
+               would be past the threshold immediately with the ship
+               sitting low. */
 #endif
             if (g_wp_bullets[i].oam != OAM_NONE) { UnsetSprite(g_wp_bullets[i].oam); oam_pool_free(g_wp_bullets[i].oam); g_wp_bullets[i].oam = OAM_NONE; }
             continue;
@@ -9725,24 +10131,29 @@ wpx_done:
 /* Odometer: the displayed score counts up towards the real one in steps of
    10, and the digits CHANGE HARD (no pixel rolling) - the tens digit still
    visibly clatters through 0-9. */
-#define SCORE_ROLL_FRAMES 4u   /* one +10 step every 4 frames (200 points takes about 1.3 s) */
 /* Powers of ten for the division-free digit output, see score_draw(). */
 static const u32 SCORE_POW10[7] = { 1uL, 10uL, 100uL, 1000uL, 10000uL, 100000uL, 1000000uL };
+/* COUNTER AS IN THE ORIGINAL (DOS_Version/.../docs/formats/hud.md,
+   1f29:163f): diff = target - shown; diff >= 2000 -> +1000; diff >= 200 ->
+   +100; otherwise -> +10. ONE step per FRAME. So the step size adapts: a
+   large credit counts up at up to 1000 points per frame, the last tens
+   clatter through one by one. Overshoot is impossible because every credit
+   in the game is a multiple of 10 - the units digit stays '0' forever in
+   the original. Before: a fixed +10 every 4 frames, briefly +30 every 4
+   frames on 31.07. Both were wrong - on a credit of 100 it ran
+   30/60/90/100, the last step fell out of line (user report "the counting
+   is wrong when shooting a flower/turret"). */
 static void score_roll_update(void) {
-    if (g_score_shown == g_score) {
-        g_score_roll_p = 0u;
-        return;
-    }
-    g_score_roll_p++;
-    if (g_score_roll_p >= (u8)SCORE_ROLL_FRAMES) {
-        g_score_roll_p = 0u;
-        /* u32 difference. The odometer only runs upwards; if g_score falls
-           (a level restart after game over) the displayed value follows
-           immediately rather than clattering backwards. */
-        if (g_score_shown > g_score) g_score_shown = g_score;
-        else if ((u32)(g_score - g_score_shown) >= 10uL) g_score_shown += 10uL;
-        else g_score_shown = g_score;
-    }
+    u32 diff;
+    if (g_score_shown == g_score) return;
+    /* Upwards only: if the score falls (restart after game over), the
+       display follows immediately instead of clattering backwards. */
+    if (g_score_shown > g_score) { g_score_shown = g_score; return; }
+    diff = (u32)(g_score - g_score_shown);
+    if      (diff >= 2000uL) g_score_shown += 1000uL;
+    else if (diff >=  200uL) g_score_shown +=  100uL;
+    else if (diff >=   10uL) g_score_shown +=   10uL;
+    else                     g_score_shown = g_score;   /* remainder, in case it is not a multiple of 10 after all */
 }
 
 // --- Show the score (SPRITES) --
@@ -9903,8 +10314,10 @@ static void score_draw(void) {
     {
         u16 aux = g_score_aux_last;   /* frame rate, or with OPTION held the number of deviating colour words */
         if (aux > 99u) aux = 99u;
-        digit[6] = (u8)(aux / 10u);
-        digit[5] = (u8)(aux % 10u);
+        if (!g_score_view) {   /* in the score view these two digits belong to the score as well, otherwise the frame rate number stands in front of it (showed "20" + score) */
+            digit[6] = (u8)(aux / 10u);
+            digit[5] = (u8)(aux % 10u);
+        }
 #if PROFILE_MODE
         /* Profiler display: [fps][fps] [block][block] [VBlanks per 30
            frames]    The fps number (60/worst frame) only knows 30, 20 and
@@ -9917,17 +10330,31 @@ static void score_draw(void) {
         digit[4] = (u8)(g_prof_sel / 10u);
         digit[3] = (u8)(g_prof_sel % 10u);
 #elif FPS_VBC_DISPLAY
+        if (!g_score_view)
         /* The left three digits show the AVERAGE of the last ~30 s
            (g_vbc_avg30) rather than the coarse fps number, with the
            current window value still on the right: [avg avg avg] 0 [vbc
            vbc vbc] */
-        { u16 av = g_vbc_avg30; if (av > 999u) av = 999u;
+        { u16 av;
+#if OAM_IN_SCORE
+          /* Diagnostic: the LEFT THREE DIGITS show the fewest free OAM
+             slots of the last window instead of the VBlank average. This
+             is exactly where it has to go - overwriting `aux` further up
+             has no effect, because this block overwrites it afterwards.
+             Went wrong exactly like that on 31.07.: the ROM kept showing
+             090. */
+          av = (u16)g_oam_free_shown;
+#else
+          av = g_vbc_avg30;
+#endif
+          if (av > 999u) av = 999u;
           digit[6] = (u8)(av / 100u);
           digit[5] = (u8)((av / 10u) % 10u);
           digit[4] = (u8)(av % 10u); }
         digit[3] = 0u;
 #endif
 #if PROFILE_MODE || FPS_VBC_DISPLAY
+        if (!g_score_view)
         { u16 vs = g_vbc_sum; if (vs > 999u) vs = 999u;
           digit[2] = (u8)(vs / 100u);
           digit[1] = (u8)((vs / 10u) % 10u);
@@ -9937,9 +10364,14 @@ static void score_draw(void) {
            deliberately overwritten. */
     }
 #endif
-    /* Suppress leading zeros (suppressed digits show the bar tile). */
+    /* Suppress leading zeros (suppressed places show the bar tile). In the
+       SCORE VIEW on the other hand pad ALL seven places with zeros - user
+       request 31.07.: the score should always stand there the same width
+       as in the original. The diagnostic view keeps the suppression, there
+       is a number on the left there anyway. */
     top = 6u;
-    while (top > 0u && digit[top] == 0u) top--;
+    if (!g_score_view)
+        while (top > 0u && digit[top] == 0u) top--;
 
     for (d = 0; d < 7; d++) {
         u8 col = (u8)(8u - d);   /* columns 8..2, units on the right */
@@ -10018,6 +10450,8 @@ static void oam_reset_all(void) {
     { u8 w, c;
       for (w = 0u; w < (u8)LVL_WEAPON_COUNT; w++) {
           g_wpx_n[w] = 0u;
+          g_wpx_head[w] = 0xFFu;   /* re-derive head index/divider, see g_wpx_head */
+          g_wpx_div[w]  = 1u;
           for (c = 0u; c < (u8)WPX_CELLS; c++) {
               g_wpx_oam[w][c][0] = OAM_NONE;
               g_wpx_oam[w][c][1] = OAM_NONE;
@@ -10280,6 +10714,7 @@ static void game_start(void) {
     { u8 st; for (st = 0u; st < (u8)LVL_SHOP_TRIGGER_COUNT; st++) g_shop_fired[st] = 0u; }
     g_shop_delay   = 0u;
     g_checkpoint = 0u; g_checkpoint_seen = 0u; g_respawn_pending = 0u;
+    g_sbomb_flash = 0u;   /* no leftover flashing across a restart */
     /* Set the loadout snapshot to the starting state, so dying before the
        first checkpoint falls back cleanly to the start of the level. */
     g_cp_cash = 0u; g_cp_weapons = g_player.weapons_active; g_cp_power = 0u;
@@ -11098,6 +11533,20 @@ static void level_loop_restart(void) {
     u32 keep_cash    = g_cash;
     u8  c;
 
+    /* SPRITE SECTION BACK TO 0. shop_resume() selects the section of the
+       CURRENT row before this branch - so section 3 at the boss shop - and
+       game_start() then starts again at row 0 without resetting the
+       section. spr_sec_select(0) so far stood ONLY in main(), so it ran
+       exactly once at the very first start. Consequence: the tiles of the
+       boss zone sat in VRAM while the level played from the beginning.
+       spr_vram() returns slot 0 - the blank tile - for tiles that are not
+       loaded. The enemies WERE there, moved and collided, but were
+       invisible. User report 31.07.: "when the game starts over there are
+       no more enemies". Must stand BEFORE game_start(): that builds
+       terrain and lead-in from the section valid at that point. */
+    spr_sec_select(0u);
+    spr_tiles_upload();
+
     game_start();
 
     g_player.weapons_active = keep_weapons;
@@ -11376,7 +11825,7 @@ static void respawn_do(void) {
 #define LOGO_TX0       2u    /* (20 screen tiles - 16 logo tiles) / 2, centred horizontally */
 #define LOGO_TY0       4u
 
-typedef struct { s8 dx, dy; u8 t; u8 oam; u8 pal; } TStar;
+typedef struct { s8 dx, dy; u8 t; u8 oam; u8 pal; u8 _pad[2]; } TStar;
 static TStar g_stars[STAR_COUNT];
 
 /* dx/dy used to be rolled INDEPENDENTLY with a magnitude of 2-6, which
@@ -11642,6 +12091,17 @@ static u8  g_intro_ph;   /* 0 = the row is zooming up, 1 = the row is settled, 2
 static u16 g_intro_f;    /* frames in the current phase */
 static u16 g_intro_glyph[64];
 
+/* HARDWARE: the tile upload has to stay inside the VBLANK. One glyph is 8
+   tiles x 8 words = 64 word writes into VRAM, so around 900 cycles. The
+   longest intro text has 27 glyphs = 1728 words ~ 24 200 cycles - and the
+   VBlank window is 24 185 cycles long. So the upload ran into the picture
+   build GUARANTEED, and there the hardware shreds the tile data. In the
+   emulator this is invisible (it does not model the access conflict), on
+   real hardware "the intro does not work". User report 31.07. Every 8
+   glyphs (~7200 cycles, a good third of the window) wait for the next
+   VBlank. Costs 4 VBlanks = 67 ms on the longest text, once per intro text
+   - invisible. */
+static u8 g_intro_up_n;
 static u16 intro_upload_glyph(u16 g, u16 *next)
 {
     volatile u16 *dst;
@@ -11651,6 +12111,9 @@ static u16 intro_upload_glyph(u16 g, u16 *next)
     if (g == 0u || g > 64u) return 0u;
     if (g_intro_glyph[g - 1u] != 0u) return g_intro_glyph[g - 1u];
     if ((*next + 8u) > (u16)(INTRO_VRAM + INTRO_VRAM_MAX)) return 0u;
+    /* Only wait HERE - after the early-outs, otherwise even a long since
+       loaded glyph costs a VBlank. See the comment above. */
+    if ((g_intro_up_n++ & 7u) == 0u) wait_vblank();
     base = *next;
     for (k = 0u; k < 8u; k++) {
         u16 ti = lvl_menu_font_glyph_idx[(u16)(g - 1u) * 8u + k];
@@ -12154,7 +12617,17 @@ static void fps_apply(u8 mode) {
 
 // --- main --
 void main(void) {
+    /* BEFORE InitNGPC(): the VBlank ISR writes the NEG bit - the GLOBAL
+       picture inversion - from g_neg_want on every single interrupt, and
+       real hardware does not zero RAM. An uninitialised byte therefore
+       inverted the title screen and the intro right from power-on. Cleared
+       here, before interrupts can fire; the register itself follows below,
+       once InitNGPC() has set up the K2GE. */
+    g_neg_on   = 0u;
+    g_neg_want = 0u;
+    g_sbomb_flash = 0u;
     InitNGPC();
+    K2GE_2D_CONTROL &= (u8)~K2GE_NEG_BIT;
     /* Force the full CPU clock of 6.144 MHz: the game never set the clock
        explicitly and ran on the BIOS default. If that was not full speed
        this is a free gain; if it was, it does no harm. */
@@ -12189,6 +12662,13 @@ void main(void) {
        g_fps_mode would be garbage on real hardware, which does not zero
        RAM. */
     g_fps_mode = (u8)FPS_MODE_DEFAULT;
+    /* fps_apply() ALREADY HERE, not only after the title screen. Otherwise
+       g_fps_div is 0 during title and intro - the frame cap is then
+       without effect, FPS_ATICK is 0 (animations stand still),
+       fps_from60() takes the 20 fps branch regardless of the mode, and
+       FPS_DUR() would divide by zero. It is called again after the title
+       screen, because OPTION can switch the mode there. */
+    fps_apply(g_fps_mode);
 
     title_screen_run();
 
@@ -12255,6 +12735,12 @@ void main(void) {
            the frame rate block at the top). */
         while ((u8)(VBCounter - frame_ref) < g_fps_div) ;
 #endif
+        /* Safety flush for EVERY state. The in-play flush sits inside the
+           STATE_PLAY branch, so g_neg_want kept its last value when the
+           state left play - one boss hit and the title screen, the intro
+           and the shop stayed inverted until the next hit. Here it costs
+           two byte moves and can no longer be forgotten. */
+        neg_flush();
         /* Raster split test: arming is now done by the VBlank ISR (every
            VBlank, see my_vblank_isr). Only the activation happens here,
            and only in game. */
@@ -12317,6 +12803,15 @@ void main(void) {
 #if WORM_TEST_MODE
             if (g_pad_pressed & J_OPTION) g_paused ^= 1u;   /* test aid: toggle pause (OPTION) */
             if (!g_paused)
+#else
+            /* OPTION switches the display: score <-> VBlank diagnostic.
+               The score cache is invalidated, otherwise score_draw() would
+               only redraw on the next value change. */
+            if (g_pad_pressed & J_OPTION) {
+                g_score_view ^= 1u;
+                g_score_last_shown = 0xFFFFu;
+                g_score_aux_last   = 0xFFFFu;
+            }
 #endif
             {
 #if WORM_TEST_MODE
@@ -12328,9 +12823,18 @@ void main(void) {
             { static volatile u16 bt; u16 bi;
               for (bi = 0u; bi < (u16)BUSY_TEST; bi++) bt = (u16)(bt + bi); }
 #endif
+#if BENCH_LOADOUT
+            { static u8 bl_done;
+              if (!bl_done) { bl_done = 1u;
+                  g_player.firerate_stage = (u8)(LVL_FIRERATE_STAGE_COUNT - 1u);
+                  g_player.weapons_active = (u16)((1u << 0) | (1u << 2)); } }
+#endif
             player_update();
 #if BENCH_DETERM
             bench_determ_tick();   /* fixed enemy scene for repeatable measurements (see BENCH_DETERM) */
+#endif
+#if BENCH_CONT
+            bench_cont_tick();     /* frozen weapon containers, see BENCH_CONT */
 #endif
 #if BENCH_META
             bench_meta_tick();     /* five circling alien beetles at the scroll end (see BENCH_META) */
@@ -12463,6 +12967,14 @@ void main(void) {
             if (!PROF_OFF(8))            /* block 8: HUD bar plus digits */
             bar_redraw_flush();   /* draw the bar frame at the end of the frame (same timing as the digits, so nothing flashes up) */
             boss_body_flash();    /* boss body hit flash (tilemap, end-of-frame timing like the bar) */
+            /* Smart bomb: screen-wide invert flicker. On every second
+               frame, so that it flashes instead of just getting bright.
+               Must stand BEFORE neg_flush(), which is the collection
+               point. */
+            if (g_sbomb_flash) {
+                g_sbomb_flash--;
+                if (g_sbomb_flash & 1u) g_neg_on = 1u;
+            }
             /* ONE place writes the NEG bit, after all hit sites have set
                their g_neg_on. Must come after boss_body_flash(), which
                sets it last. */
