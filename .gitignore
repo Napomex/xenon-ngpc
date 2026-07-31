@@ -35,6 +35,11 @@ __pycache__/
 Thumbs.db
 desktop.ini
 
+# Dated map backups. map.h itself is tracked; the timestamped copies belong
+# in Archiv/, not in the repository.
+PNG/Map/map_*.h
+PNG/Map/Tiles_*_[0-9]*.h
+
 # Machine-specific files and internal working notes (they contain local
 # absolute paths); the repository-facing documentation is README.md
 compile.bat
