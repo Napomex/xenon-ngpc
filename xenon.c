@@ -79,6 +79,8 @@ static unsigned short test_rand16(void) {
 #define QRandom()    test_rand16()
 #endif
 
+#define UnsetSprite(SpriteNo) SpriteControl(SpriteNo, SPR_OFF, 0)
+
 /* TEST mode: 1 = no auto scroll, drive the level manually with up/down (to
    compare against the map builder screenshot). 0 = normal play. */
 #define TEST_MANUAL_SCROLL 0
@@ -324,7 +326,7 @@ static s16 fps_spd_s(s16 v) {
    spr_tile_vram_init() for which physical VRAM ranges are actually free -
    two obvious-looking ranges belong to the HUD bar system and picking them
    breaks the life bar. */
-#define SPR_TILE_COUNT 326u   
+#define SPR_TILE_COUNT 341u   
 #define SPR_S_THRUST_HEAD 155u  /* Head of the 2-frame thruster animation. Forward thrust reuses the same graphic via SPR_VFLIP. */
 #define SPR_S_DIGIT0   37u   /* 37-46: digits 0-9 */
 #define SPR_S_ENEMY0   47u   /* 47-54: 8 animation frames of the enemy (head 47, currently unused) */
@@ -379,45 +381,44 @@ static s16 fps_spd_s(s16 v) {
    the rest per segment behind them, so identical raw indices always land
    in the same physical VRAM slot (g_lvl_vram[j] is segment independent)
    and the shared block never has to be touched on a switch. */
-#define SHARED_PREFIX_COUNT 9u
-#define LVL1_TILE_USED_COUNT_A 134u
+#define SHARED_PREFIX_COUNT 13u
+#define LVL1_TILE_USED_COUNT_A 153u
 static const u16 lvl_tile_used_A[LVL1_TILE_USED_COUNT_A] = {
-    0, 112, 113, 172, 173, 180, 181, 182, 183, 1, 2, 3, 4, 5, 6, 7,
-    8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
-    24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
-    40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55,
-    56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 75, 76, 77, 78,
-    79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94,
-    166, 167, 174, 175, 176, 177, 178, 179, 184, 185, 186, 187, 188, 189, 190, 191,
-    192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 211, 212, 213, 214, 215,
-    216, 217, 218, 219, 220, 221,
+    0, 5, 6, 113, 114, 169, 170, 175, 176, 177, 178, 179, 180, 1, 2, 3,
+    4, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
+    22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37,
+    38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53,
+    54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 75, 76,
+    77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92,
+    93, 94, 163, 164, 171, 172, 173, 174, 185, 186, 187, 188, 189, 190, 191, 192,
+    193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205, 206, 207, 208,
+    209, 210, 211, 212, 213, 214, 326, 327, 328, 329, 330, 331, 332, 333, 334, 335,
+    336, 337, 338, 339, 340, 341, 342, 343, 344,
 };
 
 static const u8 lvl_tile_remap_A[LVL_TILE_DATA_COUNT] = {
-    0, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
-    24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
-    40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55,
-    56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71,
-    72, 73, 74, 75, 0, 0, 0, 0, 0, 0, 0, 76, 77, 78, 79, 80,
-    81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 0,
+    0, 13, 14, 15, 16, 1, 2, 17, 18, 19, 20, 21, 22, 23, 24, 25,
+    26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41,
+    42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57,
+    58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73,
+    74, 75, 76, 77, 0, 0, 0, 0, 0, 0, 0, 78, 79, 80, 81, 82,
+    83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 96, 97, 0, 0, 0, 0, 3, 4, 98, 99,
-    100, 101, 102, 103, 5, 6, 7, 8, 104, 105, 106, 107, 108, 109, 110, 111,
-    112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 0, 0, 0, 0, 0,
-    0, 0, 0, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 0, 0,
+    0, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 98, 99, 0, 0, 0, 0, 5, 6, 100, 101, 102, 103, 7,
+    8, 9, 10, 11, 12, 0, 0, 0, 0, 104, 105, 106, 107, 108, 109, 110,
+    111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126,
+    127, 128, 129, 130, 131, 132, 133, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143,
+    144, 145, 146, 147, 148, 149, 150, 151, 152, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -437,50 +438,53 @@ static const u8 lvl_tile_remap_A[LVL_TILE_DATA_COUNT] = {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0,
 };
 
-#define LVL1_TILE_USED_COUNT_B 142u
+#define LVL1_TILE_USED_COUNT_B 193u
 static const u16 lvl_tile_used_B[LVL1_TILE_USED_COUNT_B] = {
-    0, 112, 113, 172, 173, 180, 181, 182, 183, 95, 96, 97, 98, 99, 100, 101,
-    102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 114, 115, 116, 117, 118, 119,
-    120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135,
-    138, 142, 143, 144, 145, 146, 147, 148, 160, 161, 168, 169, 170, 171, 222, 223,
-    224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239,
-    240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255,
-    256, 257, 258, 259, 260, 261, 262, 263, 264, 265, 266, 267, 268, 269, 270, 271,
-    272, 273, 274, 275, 276, 277, 278, 279, 280, 281, 282, 283, 284, 285, 286, 287,
-    288, 289, 290, 291, 292, 293, 294, 295, 296, 297, 298, 299, 300, 301,
+    0, 5, 6, 113, 114, 169, 170, 175, 176, 177, 178, 179, 180, 95, 96, 97,
+    98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 115,
+    116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131,
+    132, 133, 134, 135, 136, 139, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152,
+    153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 165, 166, 167, 168, 181, 182,
+    183, 184, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225, 226, 227, 228,
+    229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239, 240, 241, 242, 243, 244,
+    245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256, 257, 258, 259, 260,
+    261, 262, 263, 264, 265, 266, 267, 268, 269, 270, 271, 272, 273, 274, 275, 276,
+    277, 278, 279, 280, 281, 282, 283, 284, 285, 286, 287, 288, 289, 290, 291, 292,
+    293, 294, 295, 296, 297, 298, 299, 300, 301, 302, 303, 304, 305, 306, 307, 308,
+    309, 310, 311, 312, 313, 314, 315, 316, 317, 318, 319, 320, 321, 322, 323, 324,
+    325,
 };
 
 static const u8 lvl_tile_remap_B[LVL_TILE_DATA_COUNT] = {
+    0, 0, 0, 0, 0, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 13,
+    14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29,
+    30, 3, 4, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43,
+    44, 45, 46, 47, 48, 49, 50, 51, 52, 0, 0, 53, 0, 0, 0, 54,
+    55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70,
+    71, 72, 73, 0, 0, 74, 75, 76, 77, 5, 6, 0, 0, 0, 0, 7,
+    8, 9, 10, 11, 12, 78, 79, 80, 81, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 9,
-    10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
-    1, 2, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
-    40, 41, 42, 43, 44, 45, 46, 47, 0, 0, 48, 0, 0, 0, 49, 50,
-    51, 52, 53, 54, 55, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    56, 57, 0, 0, 0, 0, 0, 0, 58, 59, 60, 61, 3, 4, 0, 0,
-    0, 0, 0, 0, 5, 6, 7, 8, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 62, 63,
-    64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79,
-    80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95,
-    96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111,
-    112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127,
-    128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 82, 83, 84, 85, 86, 87, 88, 89, 90,
+    91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106,
+    107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122,
+    123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138,
+    139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154,
+    155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170,
+    171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186,
+    187, 188, 189, 190, 191, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -497,8 +501,18 @@ static const u8 lvl_tile_remap_B[LVL_TILE_DATA_COUNT] = {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0,
 };
+
 
 
 
@@ -827,6 +841,7 @@ static const u8 lvl1_terr_remap[LVL1_TERR_SEC_COUNT][LVL_TILE_DATA_COUNT] = {
 
 
 
+
 static u8        g_lvl_segment;
 static u8 g_terr_sec;        /* active terrain section */
 static u8 g_terr_target;     /* target section during a switch */
@@ -835,6 +850,20 @@ static u16 g_terr_up_idx;    /* next slot for the staged upload */
 /* Select the active terrain section. g_lvl_tile_used/remap then point at
    that section's tables; the tile data itself is loaded by build_lvl1()
    or, during a running switch, by terr_sec_step(). */
+/* FORWARD DECLARATIONS - C89, NOT cosmetics. A call with no prototype in
+   scope makes the compiler assume a return type of int, and it then works on
+   the full HL instead of just L. The upper half still holds whatever the
+   previous call left there, so a later "== 1" compiles to CP HL,1 and can
+   silently fail. Compile with -w3 to see them: THC1-Warning-521 "Undefined
+   return type" plus Warning-565 "class mismatch" (implicitly extern here,
+   static at the definition). None of these four was actually broken - three
+   are void or u16 (which happens to match int) and sspr_anim_find's u8 result
+   is assigned straight into a u8 everywhere - but nothing kept it that way. */
+static void tile_words_build(void);
+static u16  reward_icon_for(u8 kind, u16 value);
+static u8   sspr_anim_find(u16 n);
+static void intro_load_pals(void);
+
 static void lvl1_select_section(u8 sec) {
     if (sec >= (u8)LVL1_TERR_SEC_COUNT) sec = (u8)(LVL1_TERR_SEC_COUNT - 1u);
     g_terr_sec            = sec;
@@ -854,7 +883,7 @@ static void lvl1_select_section(u8 sec) {
     /* The precomputed tilemap words depend on g_lvl_tile_remap - rebuild
        them here. Three times per level instead of twenty times per
        incoming tile row. */
-    tile_words_build();
+    tile_words_build();   /* declared above - see the C89 note there */
 }
 
 static void lvl1_select_segment(u8 segment) {
@@ -1267,6 +1296,7 @@ static unsigned char g_bar_col[20];
 #define STATE_PLAY  0
 #define STATE_OVER  1
 #define STATE_SHOP  2   /* VRAM segment switch, see shop_enter()/shop_resume() */
+#define STATE_NAME  3   /* highscore name entry, see name_entry_tick() */
 
 /* firerate_stage / power_stage / weapons_active / weapon_cooldown: ship
    state for the group reward pickups, see apply_pickup(). power_stage
@@ -1382,8 +1412,8 @@ typedef struct {
     u8  c_anim_len, c_anim_speed, c_fire_rate;
     u8  c_needs_b;   /* b overlay needed? only re-read on a sprite change */
     u8  chain_b;     /* 1 = oam1 is oam0+1 and attached via the chain bit, so movement writes only oam0 (see spr_draw_chain_cell) */
-    u8  is_static;   /* 1 = still image (draw spr_num directly), 0 = anim_idx/anim_frame */
-    u16 spr_num;     /* only when is_static: fixed 1-based S number */
+    u8  is_anim;     /* 0 = still image (draw spr_num directly), 1 = anim_idx/anim_frame */
+    u16 spr_num;     /* only when !is_anim: fixed 1-based S number */
     u8  anim_idx;
     u8  anim_tick, anim_frame;
     u8  off_timer;   /* consecutive frames off screen (despawn grace) */
@@ -1692,7 +1722,16 @@ static u8      g_shop_a_count;  /* STATE_SHOP: number of J_A edge presses seen s
    exports. The names are redirected by macro so the use sites stay
    untouched (and because cc900 struggles with non-trivial static
    initialisers, including pointer aliases). */
-#ifdef LVL_CHECKPOINT_COUNT
+/* !! THE TEST IS ON THE VALUE, NOT ON THE MACRO EXISTING. The export defines
+   LVL_CHECKPOINT_COUNT as 0 and ships a one-element dummy table
+   (lvl_checkpoint_row[1] = {0}), because setting checkpoints in the tool is
+   still open work. A plain #ifdef is true for that, so the EMPTY tool table
+   won overshadowed the original data below: the pass loop
+   "for (cp = 0; cp < 0; cp++)" never ran, g_checkpoint_seen stayed 0, and
+   EVERY death threw the player back to row 0 - however far into the level
+   they had got. With "> 0" the built-in original table applies until the
+   tool really exports checkpoints, and the tool wins the moment it does. */
+#if defined(LVL_CHECKPOINT_COUNT) && (LVL_CHECKPOINT_COUNT > 0)
 #define LVL1_CHECKPOINT_COUNT ((u8)LVL_CHECKPOINT_COUNT)
 #define lvl1_checkpoint_row   lvl_checkpoint_row
 #define lvl1_checkpoint_x     lvl_checkpoint_x
@@ -1864,7 +1903,7 @@ static u16     g_row_map[32];
    for profiling the frame rate. Takes precedence over ROW_TEST_MODE. ===== */
 #define FPS_PROFILE_MODE 0
 /* ===== ENERGY_TEST_MODE: 1 = the HUD digits show energy*100 + lives, so
-   3905 means full energy (39) and 5 lives. For checking the energy system
+   3903 means full energy (39) and 3 lives. For checking the energy system
    while the HUD has no bar for it. ===== */
 #define ENERGY_TEST_MODE 0
 /* ===== SPLIT_OFF_TEST: 1 = MicroDMA raster split off during gameplay.
@@ -2029,7 +2068,7 @@ static u16     g_row_map[32];
 #elif BENCH_DETERM
 #define WARP_CHECKPOINT -1  /* no warp: start at row 0, hold in quiet terrain (see below) */
 #else
-#define WARP_CHECKPOINT -1  /* normal level start (the map has no checkpoints anyway) */
+#define WARP_CHECKPOINT -1  /* normal level start; 0..7 warps straight to that checkpoint */
 #endif
 /* ===== PAL_RELOAD_TEST - hardware diagnosis for green/yellow sprites in
    the FIRST level section (not reproducible in the emulator; after the
@@ -2477,22 +2516,23 @@ static const u16 spr_raw_used[SPR_TILE_COUNT] = {
     453, 454, 455, 456, 457, 458, 459, 460, 461, 462, 463, 464,
     465, 466, 467, 468, 469, 470, 471, 472, 473, 474, 479, 481,
     482, 483, 485, 486, 487, 488, 489, 490, 491, 494, 495, 496,
-    497, 498, 499, 500, 501, 502, 506, 519, 520, 529, 540, 541,
-    542, 543, 544, 545, 546, 547, 548, 549, 550, 551, 555, 556,
-    557, 558, 561, 562, 565, 566, 569, 570, 571, 573, 576, 577,
-    578, 580, 582, 583, 586, 587, 590, 591, 592, 593, 595, 596,
-    597, 599, 601, 602, 603, 604, 605, 606, 607, 608, 609, 610,
-    611, 612, 613, 614, 615, 616, 617, 618, 619, 620, 621, 622,
-    623, 624, 625, 626, 627, 628, 629, 630, 631, 632, 633, 634,
-    635, 636, 637, 638, 639, 640, 641, 642, 643, 644, 645, 646,
-    647, 648, 649, 650, 651, 652, 653, 654, 655, 656, 657, 658,
-    659, 660, 661, 662, 663, 664, 665, 666, 667, 668, 669, 670,
-    671, 672, 673, 675, 676, 677, 678, 679, 680, 681, 682, 683,
-    684, 685, 686, 689, 690, 691, 692, 693, 694, 695, 696, 697,
-    698, 699, 700, 703, 704, 705, 706, 707, 708, 709, 710, 711,
-    712, 713, 714, 715, 716, 717, 718, 719, 720, 721, 722, 723,
-    724, 725, 726, 727, 728, 729, 730, 731, 732, 733, 734, 735,
-    736, 737,
+    497, 498, 499, 500, 501, 502, 506, 508, 510, 511, 515, 516,
+    517, 518, 519, 520, 521, 522, 523, 524, 529, 530, 531, 532,
+    539, 540, 541, 542, 543, 544, 545, 546, 547, 548, 549, 550,
+    551, 555, 556, 557, 558, 561, 562, 565, 566, 569, 570, 571,
+    573, 576, 577, 578, 580, 582, 583, 586, 587, 590, 591, 592,
+    593, 595, 596, 597, 599, 601, 602, 603, 604, 605, 606, 607,
+    608, 609, 610, 611, 612, 613, 614, 615, 616, 617, 618, 619,
+    620, 621, 622, 623, 624, 625, 626, 627, 628, 629, 630, 631,
+    632, 633, 634, 635, 636, 637, 638, 639, 640, 641, 642, 643,
+    644, 645, 646, 647, 648, 649, 650, 651, 652, 653, 654, 655,
+    656, 657, 658, 659, 660, 661, 662, 663, 664, 665, 666, 667,
+    668, 669, 670, 671, 672, 673, 675, 676, 677, 678, 679, 680,
+    681, 682, 683, 684, 685, 686, 689, 690, 691, 692, 693, 694,
+    695, 696, 697, 698, 699, 700, 703, 704, 705, 706, 707, 708,
+    709, 710, 711, 712, 713, 714, 715, 716, 717, 718, 719, 720,
+    721, 722, 723, 724, 725, 726, 727, 728, 729, 730, 731, 732,
+    733, 734, 735, 736, 737,
 };
 
 static const u16 spr_raw_remap[SPR_RAW_REMAP_SIZE] = {
@@ -2514,22 +2554,23 @@ static const u16 spr_raw_remap[SPR_RAW_REMAP_SIZE] = {
     113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128,
     129, 0, 0, 0, 0, 130, 0, 131, 132, 133, 0, 134, 135, 136, 137, 138,
     139, 140, 0, 0, 141, 142, 143, 144, 145, 146, 147, 148, 149, 0, 0, 0,
-    150, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 151, 152, 0,
-    0, 0, 0, 0, 0, 0, 0, 153, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 0, 0,
-    0, 166, 167, 168, 169, 0, 0, 170, 171, 0, 0, 172, 173, 0, 0, 174,
-    175, 176, 0, 177, 0, 0, 178, 179, 180, 0, 181, 0, 182, 183, 0, 0,
-    184, 185, 0, 0, 186, 187, 188, 189, 0, 190, 191, 192, 0, 193, 0, 194,
-    195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205, 206, 207, 208, 209, 210,
-    211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225, 226,
-    227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239, 240, 241, 242,
-    243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256, 257, 258,
-    259, 260, 261, 262, 263, 264, 265, 266, 0, 267, 268, 269, 270, 271, 272, 273,
-    274, 275, 276, 277, 278, 0, 0, 279, 280, 281, 282, 283, 284, 285, 286, 287,
-    288, 289, 290, 0, 0, 291, 292, 293, 294, 295, 296, 297, 298, 299, 300, 301,
-    302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 312, 313, 314, 315, 316, 317,
-    318, 319, 320, 321, 322, 323, 324, 325,
+    150, 0, 151, 0, 152, 153, 0, 0, 0, 154, 155, 156, 157, 158, 159, 160,
+    161, 162, 163, 0, 0, 0, 0, 164, 165, 166, 167, 0, 0, 0, 0, 0,
+    0, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 0, 0,
+    0, 181, 182, 183, 184, 0, 0, 185, 186, 0, 0, 187, 188, 0, 0, 189,
+    190, 191, 0, 192, 0, 0, 193, 194, 195, 0, 196, 0, 197, 198, 0, 0,
+    199, 200, 0, 0, 201, 202, 203, 204, 0, 205, 206, 207, 0, 208, 0, 209,
+    210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225,
+    226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239, 240, 241,
+    242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256, 257,
+    258, 259, 260, 261, 262, 263, 264, 265, 266, 267, 268, 269, 270, 271, 272, 273,
+    274, 275, 276, 277, 278, 279, 280, 281, 0, 282, 283, 284, 285, 286, 287, 288,
+    289, 290, 291, 292, 293, 0, 0, 294, 295, 296, 297, 298, 299, 300, 301, 302,
+    303, 304, 305, 0, 0, 306, 307, 308, 309, 310, 311, 312, 313, 314, 315, 316,
+    317, 318, 319, 320, 321, 322, 323, 324, 325, 326, 327, 328, 329, 330, 331, 332,
+    333, 334, 335, 336, 337, 338, 339, 340,
 };
+
 
 
 
@@ -3061,11 +3102,7 @@ static void ship_hide(void) {
    NOT 14 - 14 is v-flip). Layout per K2GE: byte0 = TTTTTTTT, byte1 = H V B
    PPPP T. SCR1 map at 0x9000, SCR2 map at 0x9800, 32 cells per row of 2
    bytes each. */
-static void put_cell(u8 plane, u8 pal, u8 x, u8 y, u16 tile, u8 flip) {
-    volatile u16 *map = (volatile u16*)((plane == SCR_1_PLANE) ? 0x9000u : 0x9800u);
-    u16 flip_bit = flip ? 0x8000u : 0u;
-    map[(u16)y * 32u + (u16)x] = (u16)(flip_bit | ((u16)pal << 9u) | tile);
-}
+#define put_cell(map, pal, x, y, tile, flip) (map)[(u16)(y) * 32u + (u16)(x)] = (u16)((flip) | ((u16)(pal) << 9u) | (tile))
 
 /* Animation grid: per tilemap ring row (0-31) and column (0-19), remember
    whether an animated cell sits there. 0 = no animation, otherwise
@@ -3260,19 +3297,19 @@ static void mapobj_apply_row(u16 map_row, u8 ring_row) {
         off   = lvl_mapobj_cell_off[o];
         count = lvl_mapobj_cell_count[o];
         for (i = 0u; i < count; i++) {
-            u8  col, flip, a_p, b_p, a_hw;
-            u16 a_i, b_i;
+            u8  col, a_p, b_p, a_hw;
+            u16 a_i, b_i, flip;
             if (lvl_mapobj_cell_row[off + i] != map_row) continue;
             col  = lvl_mapobj_cell_col[off + i];
-            flip = lvl_mapobj_wilt_flip[off + i];
+            flip = lvl_mapobj_wilt_flip[off + i] ? 0x8000u : 0;
             a_i  = g_lvl_tile_remap[lvl_mapobj_wilt_a_idx[off + i]];
             a_p  = lvl_mapobj_wilt_a_pal[off + i];
             b_i  = g_lvl_tile_remap[lvl_mapobj_wilt_b_idx[off + i]];
             b_p  = lvl_mapobj_wilt_b_pal[off + i];
             a_hw = (a_p < 16u) ? g_scr2_pal_map[a_p] : g_scr2_pal_map[0];
-            put_cell(SCR_2_PLANE, a_hw, col, ring_row,
+            put_cell(SCROLL_PLANE_2, a_hw, col, ring_row,
                      g_lvl_vram[a_i], flip);
-            put_cell(SCR_1_PLANE, b_p, col, ring_row,
+            put_cell(SCROLL_PLANE_1, b_p, col, ring_row,
                      g_lvl_vram[b_i], flip);
             anim_grid_set(ring_row, col, 0u);   /* wilted no longer animates */
             /* out of collision AND marked as wilted (one byte, see
@@ -3473,22 +3510,18 @@ static void tile_words_build(void) {
     }
 }
 
-static void put_cell_word(u8 plane, u8 col, u8 scr_ty, u16 word, u8 flip) {
-    volatile u16 *map = (volatile u16*)((plane == SCR_1_PLANE) ? 0x9000u : 0x9800u);
-    map[(u16)scr_ty * 32u + (u16)col] = (u16)((flip ? 0x8000u : 0u) | word);
-}
+#define put_cell_word(map, col, scr_ty, word, flip) (map)[(u16)scr_ty * 32u + (u16)col] = (u16)(flip | word)
 
 static void lvl1_put_cell(u8 col, u8 scr_ty, u16 raw) {
-    u8  flip, anim_bit, ai;
-    u16 t;
-    flip     = (raw & 0x8000u) ? 1u : 0u;
+    u8  anim_bit, ai;
+    u16 t, flip;
     anim_bit = (raw & 0x4000u) ? 1u : 0u;
     t        = raw & 0x01FFu;   /* bits 0-8 = strip tile number (1-based) */
     if (t >= TILE_WORD_N) t = 0u;   /* not present according to the data check, kept as a guard */
     /* Empty cell: the code this replaces explicitly wrote flip=0 there. */
-    if (t == 0u) flip = 0u;
-    put_cell_word(SCR_2_PLANE, col, scr_ty, g_tile_word_a[t], flip);
-    put_cell_word(SCR_1_PLANE, col, scr_ty, g_tile_word_b[t], flip);
+    flip = t == 0u ? 0u : (raw & 0x8000u);
+    put_cell_word(SCROLL_PLANE_2, col, scr_ty, g_tile_word_a[t], flip);
+    put_cell_word(SCROLL_PLANE_1, col, scr_ty, g_tile_word_b[t], flip);
     ai = (anim_bit && t != 0u) ? g_tile_anim[t] : 0u;
     anim_grid_set(scr_ty, col, ai ? (u8)(ai | (flip ? 0x80u : 0u)) : 0u);
     /* Default: not wilted. mapobj_apply_row() (called from lvl1_put_row()
@@ -3508,8 +3541,9 @@ static void wcrawl_row_in(u16 map_row, u8 ring_row);
 static void lvl1_put_row(u16 map_row, u8 scr_ty) {
     u8 mx;
     if (map_row < (u16)LVL_MAP_H) {
+		u16 raw = (u16)map_row * (u16)LVL_MAP_W;
         for (mx = 0u; mx < (u8)LVL_MAP_W; mx++)
-            lvl1_put_cell(mx, scr_ty, lvl_map[(u16)map_row * (u16)LVL_MAP_W + mx]);
+            lvl1_put_cell(mx, scr_ty, lvl_map[raw++]);
         mapobj_grid_update_row(map_row, scr_ty);   /* synchronise the collision grid */
         mapobj_apply_row(map_row, scr_ty);   /* overwrite objects that have already wilted */
     } else {
@@ -3534,9 +3568,7 @@ static void lvl1_prefill(u16 row_base) {
 /* Reset ring row `row` to the terrain that belongs there according to
    g_row_map (used when the bar or separator moves on and releases the row
    again). */
-static void restore_terrain_row(u8 row) {
-    lvl1_put_row(g_row_map[row], row);
-}
+#define restore_terrain_row(row) lvl1_put_row(g_row_map[row], row)
 
 /* Per frame: tick the animations and rewrite the affected cells (per
    g_anim_grid). No tile data is copied - only map words, since all frame
@@ -3544,7 +3576,7 @@ static void restore_terrain_row(u8 row) {
 static void anim_update(void) {
     u8 i, k;
     volatile u16 *am2 = SCROLL_PLANE_2, *am1 = SCROLL_PLANE_1;
-    u16 w2c, w1c;
+    u16 w2c, w1c, w2cf, w1cf;
     /* Worklist instead of "walk all and drop out": the worm hole animation
        (head tile 138, script controlled through g_wormhole_anims) and the
        gated ones (the anemone, ticked by mapobj_rates_update - two writers
@@ -3591,11 +3623,12 @@ static void anim_update(void) {
                VRAM slot and the index ty*32+tx. Hoisted out: per cell only
                the index, the flip bit and two stores remain. */
             w2c = (u16)(((u16)a_hw2 << 9u) | g_lvl_vram[a_i2]);
+			w2cf = (u16)(0x8000u | w2c);
             w1c = (u16)(((u16)b_p2  << 9u) | g_lvl_vram[b_i2]);
+			w1cf = (u16)(0x8000u | w1c);
             for (j = 0u; j < g_anim_cell_count[i]; j++) {
                 u16 ci;
                 ty = g_anim_cell_row[i][j];
-                tx = g_anim_cell_col[i][j];
                 /* Do not write cells outside the visible area. The 32-row
                    ring is 256 px tall while only 136 are visible, so up to
                    40 % of registered cells were permanently off screen and
@@ -3612,10 +3645,11 @@ static void anim_update(void) {
                    animation cells it may differ; it is here to be
                    measured, not as a certainty. */
                 if ((u8)((u8)(ty << 3) - g_scr1_y) >= (u8)CLIP_Y) continue;
+                tx = g_anim_cell_col[i][j];
                 ci = (u16)((u16)ty * 32u + (u16)tx);
                 if (g_anim_grid[ty][tx] & 0x80u) {
-                    am2[ci] = (u16)(0x8000u | w2c);
-                    am1[ci] = (u16)(0x8000u | w1c);
+                    am2[ci] = w2cf;
+                    am1[ci] = w1cf;
                 } else {
                     am2[ci] = w2c;
                     am1[ci] = w1c;
@@ -3873,8 +3907,8 @@ static void bar_draw_at(u8 row) {
         bi = g_bar_col[tx];
         /* column 19: design 10 mirrored (replaces the former separate
            design 13) */
-        put_cell(SCR_2_PLANE, barPal[bi], tx, row,
-                 (u16)(TILE_BAR_BASE + bi), (tx == 19u) ? 1u : 0u);
+        put_cell(SCROLL_PLANE_2, barPal[bi], tx, row,
+                 (u16)(TILE_BAR_BASE + bi), (tx == 19u) ? 0x8000u : 0u);
         anim_grid_set(row, tx, 0u);  /* the bar is never animated - clear the leftover from the terrain prefill */
     }
     /* The bar row was (re)drawn, so invalidate the digit cache and let
@@ -3943,11 +3977,13 @@ static const u8 ship_hit_x[3] = { 4u, 12u, 19u };
 static const u8 ship_hit_y[4] = { 2u, 9u, 16u, 21u };
 
 static u8 ship_hits_terrain(u8 x, u8 y) {
-    u8 i, j;
-    for (j = 0u; j < 4u; j++)
+    u8 i, j, yj;
+    for (j = 0u; j < 4u; j++) {
+		yj = (u8)(y + ship_hit_y[j]);
         for (i = 0u; i < 3u; i++)
-            if (terrain_solid((u8)(x + ship_hit_x[i]), (u8)(y + ship_hit_y[j])))
+            if (terrain_solid((u8)(x + ship_hit_x[i]), yj))
                 return 1u;
+	}
     return 0u;
 }
 
@@ -3978,12 +4014,14 @@ static u8 mapobj_hit_test(u8 x, u8 y) {
 
 /* Ship point grid (as in ship_hits_terrain) against map objects. */
 static u8 ship_hits_mapobj(u8 x, u8 y) {
-    u8 i, j, obj;
-    for (j = 0u; j < 4u; j++)
+    u8 i, j, obj, yj;
+    for (j = 0u; j < 4u; j++) {
+		yj = (u8)(y + ship_hit_y[j]);
         for (i = 0u; i < 3u; i++) {
-            obj = mapobj_hit_test((u8)(x + ship_hit_x[i]), (u8)(y + ship_hit_y[j]));
+            obj = mapobj_hit_test((u8)(x + ship_hit_x[i]), yj);
             if (obj != MAPOBJ_NONE) return obj;
         }
+	}
     return MAPOBJ_NONE;
 }
 
@@ -4029,6 +4067,16 @@ static void mapobj_wilt(u8 obj_idx) {
    (PLAYER_HIT_IFRAMES), and the full 90 frames only on an actual    loss
    of life, where they cover the re-entry. */
 #define PLAYER_MAX_ENERGY     39u   /* LVL_SHIP_START_ENERGY */
+/* Lives at the start of a game. THREE, as in the DOS original: [0x918a],
+   init 3 at 1000:1804, respawn DECs at 1000:3f29, the continue resets it to
+   3 at 1000:3f4b (docs/formats/hud.md sec.4, collision-leads.md - the two
+   counters 0x918a/0x91b0 both init to 3). We had 5, which was never taken
+   from anywhere.
+   The count is the number of ATTEMPTS, not of extra ships: the original
+   decrements first and respawns only while lives > 0, so three means three
+   goes. player_damage() does exactly the same, so the number carries over
+   1:1. */
+#define PLAYER_START_LIVES     3u
 #define DMG_ENEMY_SHOT         4u   /* LVL_ENEMY_SHOT_DAMAGE */
 #define DMG_ENEMY_CONTACT      8u   /* LVL_ENEMY_CONTACT_DAMAGE */
 #define DMG_ENEMY_CONTACT_TOUGH 16u /* likewise, tough enemies (lvl_spawn_health >= 2) */
@@ -4044,10 +4092,11 @@ static u8 g_dmg_src;
    at a full 39, one left at 8. Drawing is only requested here;
    bar_redraw_flush() does it at the end of the frame, since HUD writes
    must never happen mid-frame. */
-/* Runtime invulnerability, toggled with OPTION. Deliberately a real
-   variable rather than a define, so the same build can be tested with and
-   without it - particularly for the checkpoints, which cannot be triggered
-   at all with GOD_MODE set. */
+/* Runtime invulnerability. Deliberately a real variable rather than a
+   define, so the same build can be tested with and without it - particularly
+   for the checkpoints, which cannot be triggered at all with GOD_MODE set.
+   Nothing sets it at the moment: OPTION now switches the display, and the
+   invulnerability follows THAT (see player_damage). */
 static u8 g_god;
 static u16 g_dbg_shots;   /* count of main gun shots fired (telemetry only) */
 static u16 g_dbg_area;    /* count of area damage hits (bomb/mine, telemetry only) */
@@ -4061,15 +4110,30 @@ static void bar_set_energy(void) {
     if (g_bar_redraw == 0u) g_bar_redraw = 1u;
 }
 
-static void player_damage(u8 dmg) {
+/* IS GOD MODE IN FORCE RIGHT NOW?
+   INVULNERABILITY IS TIED TO THE DIAGNOSTIC VIEW. It holds while the VBlank
+   counter is on display and lifts the moment OPTION switches to the score.
+   Measuring frame load needs a ship that cannot die; a score that goes into
+   the highscore table must not be flown with one. The same build therefore
+   does both, and WHICH ONE IS IN FORCE IS ON THE SCREEN rather than buried
+   in a #define nobody remembers setting.
+   In WORM_TEST_MODE this changes nothing: OPTION toggles the pause there,
+   not the view, so g_score_view stays 0 and the ship stays invulnerable as
+   before.
+
+   ONE definition for every caller. Two places ask: player_damage() below
+   and shop_do_buy() (god mode shops for free). A second copy of this
+   condition would drift apart the first time the rule changes - and the
+   drift would be silent, because both halves keep compiling. */
+static u8 god_active(void) {
 #if WORM_TEST_MODE || GOD_MODE
-    (void)dmg;
-    return;   /* ship invulnerable (WORM_TEST_MODE or GOD_MODE) */
+    if (!g_score_view) return 1u;
 #endif
-    /* OPTION toggles invulnerability during play as a test aid, so no
-       rebuild with GOD_MODE set is needed. Toggled in the main loop, see
-       g_god. */
-    if (g_god) return;
+    return (u8)(g_god && !g_score_view);   /* runtime invulnerability, see g_god */
+}
+
+static void player_damage(u8 dmg) {
+    if (god_active()) { (void)dmg; return; }
     /* The boss cash rain makes the player invulnerable so the reward
        window can be cleared safely, as in the original. */
     if (g_boss_rain) return;
@@ -4426,7 +4490,7 @@ static void player_init(void) {
     g_player.x       = SCR_W / 2;
     g_player.y       = SCR_H - 36;
     g_player.fire_cd = 0;
-    g_player.lives   = 5;
+    g_player.lives   = (u8)PLAYER_START_LIVES;
     g_player.energy  = (u8)PLAYER_MAX_ENERGY;   
     g_player.inv_cd  = 0;
     g_player.firerate_stage = 0u;
@@ -4885,6 +4949,7 @@ typedef struct {
     u8  oam_b;                 /* b plane, the claw only */
     u8  seg_x[BOSS_SEG_COUNT], seg_y[BOSS_SEG_COUNT];
     u8  flash;                 /* remaining frames of hit flash (sprite parts and body map tiles) */
+    u8  offscreen;             /* 1 = anchor not in the ring, seg_x/seg_y are STALE - see boss_draw */
 } TBoss;
 static TBoss g_boss;
 #define BOSS_BODY_RINGS 8u
@@ -4917,6 +4982,7 @@ static void boss_reset(void) {
     g_boss.y = (u8)BOSS_Y_MIN; g_boss.bob_v = 0; g_boss.bob_c = 0u;
     g_boss.cycle = 0; g_boss.reach = 0u; g_boss.fire_acc = 0u; g_boss.tick = 0u; g_boss.bob = 0u;
     g_boss.flash = 0u;
+    g_boss.offscreen = 1u;   /* nothing placed yet, so the coordinates are not valid */
     g_boss_flashing = 0u; g_boss_remove_pending = 0u;   /* reset the body flash and remove latches (no stale restore after a level restart) */
     g_boss.oam_b = OAM_NONE;
     for (k = 0u; k < (u8)BOSS_SEG_COUNT; k++) g_boss.oam[k] = OAM_NONE;
@@ -5033,7 +5099,18 @@ static void boss_draw(void) {
     u16 raw, rawb;
     for (k = 0u; k < (u8)BOSS_SEG_COUNT; k++) {
         u8 last = (u8)(k == (u8)(BOSS_SEG_COUNT - 1u));
-        if (!g_boss.active || g_boss.reach == 0u) {          /* retracted = invisible */
+        /* !! offscreen BELONGS IN THIS TEST. boss_update() bails out as soon
+           as the anchor is not in the ring, and from then on seg_x/seg_y
+           are the coordinates of the last place it WAS visible - stale.
+           boss_draw() only looked at active and reach, so it allocated
+           FRESH OAM slots and drew the segments at those old coordinates
+           again. Symptom (user report): died at the boss, came back at the
+           checkpoint, and the tentacle was still standing in the picture.
+           respawn_do() does call boss_hide(), but that only holds for ONE
+           frame - the next one drew it again. Exactly the class of fault
+           the comment on boss_hide() describes; back then only respawn_do()
+           was sealed, not the redraw that follows it. */
+        if (!g_boss.active || g_boss.reach == 0u || g_boss.offscreen) {   /* retracted or out of sight = invisible */
             if (g_boss.oam[k] != OAM_NONE) {
                 UnsetSprite(g_boss.oam[k]); oam_pool_free(g_boss.oam[k]); g_boss.oam[k] = OAM_NONE;
             }
@@ -5347,7 +5424,8 @@ static void boss_update(void) {
            the last event is 14 rows before the fight. No clear needed. */
     }
     anchor = boss_anchor_y();
-    if (anchor == 0xFFu) { boss_hide(); return; }   /* anchor out of sight -> segments away */
+    if (anchor == 0xFFu) { boss_hide(); g_boss.offscreen = 1u; return; }   /* anchor out of sight -> segments away */
+    g_boss.offscreen = 0u;
     g_boss.y = anchor;
     g_boss.tick = (u8)(g_boss.tick + FPS_ATICK);   /* half frames, see boss_place */
     boss_bob_delta();
@@ -5677,37 +5755,39 @@ static u8 metaenemy_spawn(u8 s, u16 n, u8 is_anim) {
    other. Return value as for metaenemy_spawn. */
 static u8 worm_spawn(u8 s, u16 rot) {
     u8 w, k, segs;
+	s16 delay;
     for (w = 0u; w < (u8)MAX_WORMS; w++) {
-        if (g_worms[w].active) continue;
+		TWorm* worm = &g_worms[w];
+        if (worm->active) continue;
         segs = lvl_spawn_worm_segs[s];
         if (segs > (u8)MAX_WORM_SEGS) segs = (u8)MAX_WORM_SEGS;   /* bounds guard, see the spr_vram comment: a future export could deliver more */
-        g_worms[w].active          = 1u;
-        g_worms[w].spawn_x         = lvl_spawn_x[s];   /* s16, see the TWorm comment */
-        g_worms[w].spawn_y         = lvl_spawn_y[s];
-        g_worms[w].path            = lvl_spawn_path[s];
-        g_worms[w].rot             = (u8)rot;
-        g_worms[w].scroll_at_spawn = g_scroll_y;
-        g_worms[w].num_segs        = segs;
-        g_worms[w].delay           = lvl_spawn_worm_delay[s];
-        g_worms[w].spawn_idx       = s;
+        worm->active          = 1u;
+        worm->spawn_x         = lvl_spawn_x[s];   /* s16, see the TWorm comment */
+        worm->spawn_y         = lvl_spawn_y[s];
+        worm->path            = lvl_spawn_path[s];
+        worm->rot             = (u8)rot;
+        worm->scroll_at_spawn = g_scroll_y;
+        worm->num_segs        = segs;
+        worm->delay           = lvl_spawn_worm_delay[s];
+        worm->spawn_idx       = s;
         /* Rotation set hit zone: there is no entry for 0x2000|rot in
            lvl_hitzone_spr[] (it is the same for all 8 directions), so
            hitzone_resolve() falls back to the full sprite area
            automatically, exactly as documented. */
         hitzone_resolve(lvl_spawn_spr[s], ENEMY_HIT_FALLBACK_W, ENEMY_HIT_FALLBACK_H,
-                         &g_worms[w].hz_dx, &g_worms[w].hz_dy,
-                         &g_worms[w].hz_w, &g_worms[w].hz_h);
+                         &worm->hz_dx, &worm->hz_dy,
+                         &worm->hz_w, &worm->hz_h);
         for (k = 0u; k < segs; k++) {
-            g_worms[w].seg[k].alive = 1u;
-            g_worms[w].seg[k].frame = (s16)(-(s16)((u16)g_worms[w].delay * k));
-            g_worms[w].seg[k].x_fix = 0;
-            g_worms[w].seg[k].y_fix = 0;
-            g_worms[w].seg[k].x     = (u8)g_worms[w].spawn_x;
-            g_worms[w].seg[k].y     = (u8)g_worms[w].spawn_y;
-            g_worms[w].seg[k].off_timer = 0u;
-            g_worms[w].seg[k].oam       = OAM_NONE;
-            g_worms[w].seg[k].last_snum = 0u;
-            g_worms[w].seg[k].last_flip = 0xFFu;
+            worm->seg[k].alive = 1u;
+            worm->seg[k].frame = (s16)(-(s16)((u16)worm->delay * k));
+            worm->seg[k].x_fix = 0;
+            worm->seg[k].y_fix = 0;
+            worm->seg[k].x     = (u8)worm->spawn_x;
+            worm->seg[k].y     = (u8)worm->spawn_y;
+            worm->seg[k].off_timer = 0u;
+            worm->seg[k].oam       = OAM_NONE;
+            worm->seg[k].last_snum = 0u;
+            worm->seg[k].last_flip = 0xFFu;
         }
         return 1u;
     }
@@ -5803,8 +5883,8 @@ static void enemies_update(void) {
             u16 spr      = lvl_spawn_spr[s];
             u16 n        = spr & 0x01FFu;
             u8  is_anim  = (u8)((spr >> 14) & 1u);
-            u8  is_meta  = (u8)((spr >> 12) & 1u);
-            u8  is_rot   = (u8)((spr >> 13) & 1u);   /* rotation set / worm */
+            u16 is_meta  = spr & (1<<12);
+            u16 is_rot   = spr & (1<<13);   /* rotation set / worm */
             u8  spawned;   /* declaration at the start of the block, assignment later (cc900 code generation) */
             /* Many spawns have no graphic yet (lvl_spawn_spr[s]==0).
                Without this guard they all run through the normal enemy
@@ -5871,7 +5951,7 @@ static void enemies_update(void) {
                        although they never change. */
                     g_enemies[i].path_len     = lvl_path_len[g_enemies[i].path];
                     g_enemies[i].c_fire_rate  = lvl_spawn_fire_rate[s];
-                    g_enemies[i].is_static  = (u8)(is_anim ? 0u : 1u);
+                    g_enemies[i].is_anim  = is_anim;
                     if (is_anim) {
                         g_enemies[i].anim_idx   = sspr_anim_index_for(n);
                         g_enemies[i].anim_tick  = 0u;
@@ -5967,7 +6047,7 @@ static void enemies_update(void) {
         g_enemies[i].x = (u8)real_x;
         g_enemies[i].y = (u8)real_y;
 
-        if (!g_enemies[i].is_static) {
+        if (g_enemies[i].is_anim) {
             anim_len = g_enemies[i].c_anim_len;         /* from the cache */
             /* half-frame tick, see c_anim_speed and the frame rate block
                above. */
@@ -6054,7 +6134,7 @@ static void bench_determ_tick(void) {
         e->x_fix = 0; e->y_fix = 0; e->frame = 0u;
         e->path = 0u; e->pp = PATH_PTR(0u, 0u); e->path_len = 30000u;   /* never an end of path (speed 0, so pp is never dereferenced) */
         e->path_acc = 0u; e->c_fire_rate = 0u; e->c_needs_b = 0u;
-        e->is_static = (u8)(s_anim ? 0u : 1u);
+        e->is_anim = s_anim;
         if (s_anim) {
             e->anim_idx = sspr_anim_index_for((u16)s_n);
             e->anim_tick = 0u; e->anim_frame = 0u;
@@ -6384,10 +6464,16 @@ static u16 reward_icon_for(u8 kind, u16 value) {
        50 the large one. Checkable without guesswork through the bounding
        box of the animation frames.    REMEMBER: these heads appear ONLY
        here in the C code, not in map.h, so a tool    export can shift them
-       silently without anything showing up. */
+       silently without anything showing up.
+       That is exactly what happened: 116/123/130 were the heads of an
+       older export and are not listed in lvl_sspr_anim_head any more -
+       every head below moved up by one (110/117/124/131/138). The old
+       numbers still HAVE tile data, so nothing looked broken; they were
+       simply the wrong picture. Check against lvl_sspr_anim_head, never
+       against "does it render". */
     case 0:  return (value >= 100u) ? 157u : 171u;  /* points: large cash bubble (8x8) or small (7x7) */
-    case 1:  return 130u;                           /* fire rate */
-    case 2:  return 123u;                           /* power stage */
+    case 1:  return 131u;                           /* fire rate */
+    case 2:  return 124u;                           /* power stage */
     /* This used to be a fixed S number - the graphic of weapon 0 - so
        every weapon container looked the same whatever was inside. Now it
        uses the graphic OF that weapon (value = weapon index). If its
@@ -6395,7 +6481,7 @@ static u16 reward_icon_for(u8 kind, u16 value) {
        frame is taken: the pickup drawing path can only handle ONE sprite,
        not several cells. */
     case 3:  return weapon_icon_s((u8)value);       /* weapon */
-    case 4:  return 116u;                           /* speedup */
+    case 4:  return 117u;                           /* speedup */
     default: return 157u;
     }
 }
@@ -6962,7 +7048,12 @@ static u8 g_wallworm_last_exit = 0xFFu;   /* hole used last (against three worms
 static void wormhole_anim_draw(u8 s) {
     TWormholeAnim *wa = &g_wormhole_anims[s];
     u16 n = wormhole_seq[wa->step];
-    u16 a_i2, b_i2; u8 a_p2, b_p2, a_hw2, j, flip2, ty, tx;
+    /* flip2 MUST be u16: put_cell ORs it in as bit 15, and 0x8000 assigned
+       to a u8 is silently 0. It used to be a u8 - the hole then kept the
+       h-flip of its STATIC map cell while every animated step (139/140)
+       was drawn unmirrored, so the mirrored holes in the middle of the
+       level faced the wrong way as soon as they opened. */
+    u16 a_i2, b_i2, flip2; u8 a_p2, b_p2, a_hw2, j, ty, tx;
     a_i2 = g_lvl_tile_remap[lvl_tile_a_idx[n - 1u]];
     a_p2 = lvl_tile_a_pal[n - 1u];
     b_i2 = g_lvl_tile_remap[lvl_tile_b_idx[n - 1u]];
@@ -6970,9 +7061,9 @@ static void wormhole_anim_draw(u8 s) {
     a_hw2 = (a_p2 < 16u) ? g_scr2_pal_map[a_p2] : g_scr2_pal_map[0];
     for (j = 0u; j < wa->ncell; j++) {
         ty = wa->cell_row[j]; tx = wa->cell_col[j];
-        flip2 = wa->cell_flip[j];   /* from lvl_map bit 15 - applies to static 138s as well */
-        put_cell(SCR_2_PLANE, a_hw2, tx, ty, g_lvl_vram[a_i2], flip2);
-        put_cell(SCR_1_PLANE, b_p2,  tx, ty, g_lvl_vram[b_i2], flip2);
+        flip2 = wa->cell_flip[j] ? 0x8000u : 0u;   /* from lvl_map bit 15 - applies to static 138s as well */
+        put_cell(SCROLL_PLANE_2, a_hw2, tx, ty, g_lvl_vram[a_i2], flip2);
+        put_cell(SCROLL_PLANE_1, b_p2,  tx, ty, g_lvl_vram[b_i2], flip2);
     }
 }
 
@@ -7722,8 +7813,10 @@ static void wcrawl_free_oam(u8 i) {
     TWallCrawler *w = &g_wcrawlers[i];
     u8 c;
     for (c = 0u; c < (u8)WCRAWL_CELLS; c++) {
-        if (w->oam[c][0] != OAM_NONE) { UnsetSprite(w->oam[c][0]); oam_pool_free(w->oam[c][0]); w->oam[c][0] = OAM_NONE; }
-        if (w->oam[c][1] != OAM_NONE) { UnsetSprite(w->oam[c][1]); oam_pool_free(w->oam[c][1]); w->oam[c][1] = OAM_NONE; }
+		u8* spriteNo = &w->oam[c][0];
+        if (*spriteNo != OAM_NONE) { UnsetSprite(*spriteNo); oam_pool_free(*spriteNo); *spriteNo = OAM_NONE; }
+		spriteNo = &w->oam[c][1];
+        if (*spriteNo != OAM_NONE) { UnsetSprite(*spriteNo); oam_pool_free(*spriteNo); *spriteNo = OAM_NONE; }
         w->last_snum[c] = 0u;
     }
     w->cells = 0u;
@@ -9374,9 +9467,9 @@ static void draw_sprites(void) {
             }
             continue;
         }
-        s_num = e->is_static
-            ? e->spr_num
-            : lvl_sspr_anim_frames[e->anim_idx][e->anim_frame];
+        s_num = e->is_anim
+            ? lvl_sspr_anim_frames[e->anim_idx][e->anim_frame]
+            : e->spr_num;
         /* read from ROM only on a sprite change - on the position fastpath
            the value is unchanged. */
         if (s_num != e->last_snum) {
@@ -9546,8 +9639,8 @@ static void draw_sprites(void) {
                 m->chain_base  = base;
                 m->chain_cells = cnt;
                 for (c = 0u; c < cnt; c++) {
-                    m->oam[c]      = (u8)(base + c * 2u);
-                    m->oam_b[c]    = (u8)(base + c * 2u + 1u);
+                    m->oam[c]      = base++;
+                    m->oam_b[c]    = base++;
                     m->last_snum[c] = 0u;   /* force a full redraw (sets the chain bits and deltas) */
                 }
             }
@@ -9570,10 +9663,10 @@ static void draw_sprites(void) {
                    are ordinary pool slots, so they are freed individually
                    as usual). */
                 for (c = 0u; c < m->chain_cells; c++) {
-                    UnsetSprite((u8)(base + c * 2u));
-                    UnsetSprite((u8)(base + c * 2u + 1u));
-                    oam_pool_free((u8)(base + c * 2u));
-                    oam_pool_free((u8)(base + c * 2u + 1u));
+                    UnsetSprite(base);
+                    oam_pool_free(base++);
+                    UnsetSprite(base);
+                    oam_pool_free(base++);
                     m->oam[c] = m->oam_b[c] = OAM_NONE;
                     m->last_snum[c] = 0u;
                 }
@@ -9607,8 +9700,8 @@ static void draw_sprites(void) {
             if (m->flash) {
                 u8 *sc = SPRITE_COLOUR;
                 for (c = 0u; c < m->chain_cells; c++) {
-                    sc[(u8)(base + c * 2u)]      = (u8)FLASH_PAL;
-                    sc[(u8)(base + c * 2u + 1u)] = (u8)FLASH_PAL;
+                    sc[base++] = (u8)FLASH_PAL;
+                    sc[base++] = (u8)FLASH_PAL;
                 }
                 m->flash--;
                 if (m->flash == 0u)
@@ -10327,8 +10420,9 @@ static void score_draw(void) {
            20 fps    Everything between is linear, e.g. 072 = every third
            frame needs one VBlank    more. That makes each block's
            contribution a number rather than "better or    worse". */
-        digit[4] = (u8)(g_prof_sel / 10u);
-        digit[3] = (u8)(g_prof_sel % 10u);
+        if (!g_score_view)
+        { digit[4] = (u8)(g_prof_sel / 10u);
+          digit[3] = (u8)(g_prof_sel % 10u); }
 #elif FPS_VBC_DISPLAY
         if (!g_score_view)
         /* The left three digits show the AVERAGE of the last ~30 s
@@ -10350,8 +10444,15 @@ static void score_draw(void) {
           if (av > 999u) av = 999u;
           digit[6] = (u8)(av / 100u);
           digit[5] = (u8)((av / 10u) % 10u);
-          digit[4] = (u8)(av % 10u); }
-        digit[3] = 0u;
+          digit[4] = (u8)(av % 10u);
+        /* !! digit[3] BELONGS INSIDE THE GUARD. It is the THOUSANDS place of
+           the score, and it used to be zeroed unconditionally - the separator
+           between the two diagnostic fields. In the score view that wiped the
+           thousands: the display counted up to 0999 and then showed 0000, so
+           the score looked as though it started over at 1000. FOUR places
+           write digits in this block, not three (6, 5, 4 AND 3); the note in
+           CLAUDE.md 1.6 listed only the first three. */
+          digit[3] = 0u; }
 #endif
 #if PROFILE_MODE || FPS_VBC_DISPLAY
         if (!g_score_view)
@@ -10381,12 +10482,12 @@ static void score_draw(void) {
                colours EXACTLY. Do NOT use hardware slot 2 -
                build_bar_assets overwrites that with the bar's dark "warm",
                which gave the digits the dark bar look. */
-            put_cell(SCR_2_PLANE, g_digit_pal_hw, col, g_bar_vrow,
+            put_cell(SCROLL_PLANE_2, g_digit_pal_hw, col, g_bar_vrow,
                      spr_vram(lvl_sspr_a_idx[(u16)(SPR_S_DIGIT0 - 1u) + digit[d]]), 0u);
         } else {
             /* suppressed digit: restore the bar tile of that column */
             u8 bi = g_bar_col[col];
-            put_cell(SCR_2_PLANE, barPal[bi], col, g_bar_vrow,
+            put_cell(SCROLL_PLANE_2, barPal[bi], col, g_bar_vrow,
                      (u16)(TILE_BAR_BASE + bi), 0u);
         }
     }
@@ -10654,6 +10755,34 @@ static void game_start(void) {
        start, empty), tilemap row 0 (top) = map row 18 (terrain visible). */
     lvl1_prefill(0u);
     build_bar_assets();
+    /* !! SPRITE TILES AND PALETTES BACK, EVERY TIME. The screens between two
+       games write into character RAM: the highscore page and the name entry
+       upload the shop font to HS_FONT_VRAM (360), and that is INSIDE THE
+       SPRITE POOL, which starts at 348. build_lvl1() above only repairs the
+       terrain zone.
+       Symptom of leaving it out (user report): after a game over the score
+       digits came back "completely shifted" - they are pool tiles
+       (spr_vram(lvl_sspr_a_idx[SPR_S_DIGIT0..])), so they were drawn from
+       whatever shop-font glyph happened to sit at that slot.
+       The old game over screen got away with it: it writes the 16x16
+       alphabet from INTRO_VRAM (200) upwards, and that is in the terrain
+       zone which build_lvl1() rebuilds anyway.
+       Same recipe as shop_resume(), which has to solve exactly this - hence
+       the cache reset below as well: the sprite pools remember the tile
+       number last written per slot and skip a rewrite when it matches. */
+    spr_sec_select(0u);        /* a new game always starts in section 0 */
+    spr_tiles_upload();
+    spr_pal_load();
+    {
+        u8 q, cc;
+        for (q = 0u; q < (u8)MAX_BULLETS; q++)        g_bullets[q].last_snum = 0u;
+        for (q = 0u; q < (u8)MAX_WPBULLETS; q++)      g_wp_bullets[q].last_snum = 0u;
+        for (q = 0u; q < (u8)MAX_MAPOBJ_BULLETS; q++) g_mo_bullets[q].last_snum = 0u;
+        for (q = 0u; q < (u8)MAX_ENEMIES; q++)        g_enemies[q].last_snum = 0u;
+        for (q = 0u; q < (u8)MAX_METAENEMIES; q++)
+            for (cc = 0u; cc < (u8)META_CELLS; cc++)  g_metaenemies[q].last_snum[cc] = 0u;
+        g_ship_last_meta = 0xFFu;
+    }
     g_bar_vrow = 19u;      /* +1 (fixed split): the bar sits one ring row lower, so row 18 = map row 0 stays visible terrain at y=143 */
     g_bar_redraw = 0u; g_bar_restore_pending = 0xFFu;   /* no leftovers from the previous run */
     bar_draw_at(g_bar_vrow);
@@ -10827,16 +10956,16 @@ static void shop_screen_draw(void) {
     for (r = 0u; r < (u8)LVL_SHOP_MAP_H; r++) {
         for (c = 0u; c < (u8)LVL_SHOP_MAP_W; c++) {
             u16 v = lvl_shop_map[(u16)r * (u16)LVL_SHOP_MAP_W + (u16)c];
-            u16 n = (u16)(v & 0x01FFu);
-            u8  fl = (u8)((v & 0x8000u) ? 1u : 0u);
+            u16 n = (u16)(v & 0x01FFu), fl;
             if (n == 0u) continue;
+            fl = v & 0x8000u;
             n--;                                   /* 1-based -> array index */
             cell = lvl_shop_tile_a_idx[n];
             if (cell != 0xFFFFu && cell != 0u)
-                put_cell(SCR_2_PLANE, lvl_shop_tile_a_pal[n], c, r, cell, fl);
+                put_cell(SCROLL_PLANE_2, lvl_shop_tile_a_pal[n], c, r, cell, fl);
             cell = lvl_shop_tile_b_idx[n];
             if (cell != 0xFFFFu && cell != 0u)
-                put_cell(SCR_1_PLANE, lvl_shop_tile_b_pal[n], c, r, cell, fl);
+                put_cell(SCROLL_PLANE_1, lvl_shop_tile_b_pal[n], c, r, cell, fl);
         }
     }
 }
@@ -10906,7 +11035,7 @@ static void shop_text_clear(void) {
     u8 r, c;
     for (r = 0u; r < (u8)SHOP_TEXT_ROWS; r++)
         for (c = 0u; c < (u8)SHOP_TEXT_COLS; c++)
-            put_cell(SCR_2_PLANE, 0u, (u8)(SHOP_TEXT_COL0 + c), (u8)(SHOP_TEXT_ROW0 + r), 0u, 0u);
+            put_cell(SCROLL_PLANE_2, 0u, (u8)(SHOP_TEXT_COL0 + c), (u8)(SHOP_TEXT_ROW0 + r), 0u, 0u);
 }
 
 /* Write text into the field, wrapping at SHOP_TEXT_COLS. A space (from the
@@ -10935,7 +11064,7 @@ static void shop_text_draw(const char *t) {
         {
             u16 tile = shop_glyph(ch);
             if (tile != 0u)
-                put_cell(SCR_2_PLANE, (u8)SHOP_FONT_PAL_SCR2,
+                put_cell(SCROLL_PLANE_2, (u8)SHOP_FONT_PAL_SCR2,
                          (u8)(SHOP_TEXT_COL0 + g_text_col), (u8)(SHOP_TEXT_ROW0 + g_text_row), tile, 0u);
         }
         g_text_col++; i++;
@@ -11367,7 +11496,7 @@ static void shop_text_num(u16 v) {
         if (g_text_col >= (u8)SHOP_TEXT_COLS) { g_text_col = 0u; g_text_row++; }
         if (g_text_row >= (u8)SHOP_TEXT_ROWS) return;
         if (tile != 0u)
-            put_cell(SCR_2_PLANE, (u8)SHOP_FONT_PAL_SCR2,
+            put_cell(SCROLL_PLANE_2, (u8)SHOP_FONT_PAL_SCR2,
                      (u8)(SHOP_TEXT_COL0 + g_text_col), (u8)(SHOP_TEXT_ROW0 + g_text_row), tile, 0u);
         g_text_col++;
     }
@@ -11432,7 +11561,16 @@ static u8 shop_do_buy(u8 idx) {
     t  = lvl_shop_type[idx];
     pr = shop_price_of(idx);
     if (pr == 0u)          { shop_text_draw(lvl_shop_txt_out_of_stock); return 0u; }
-    if (g_cash < (u32)pr)  { shop_text_draw(lvl_shop_txt_out_of_stock); return 0u; }
+    /* GOD MODE SHOPS FOR FREE. Same switch as the invulnerability (see
+       god_active): it holds while the VBlank display is running and lifts
+       the moment OPTION switches to the score - so a loadout that was
+       bought for nothing can never end up behind a highscore entry.
+       The price check and the deduction must be skipped TOGETHER: g_cash
+       is unsigned, so deducting a price that is not covered would not read
+       as "free" but wrap around to roughly four billion. */
+    if (!god_active() && g_cash < (u32)pr) {
+        shop_text_draw(lvl_shop_txt_out_of_stock); return 0u;
+    }
     if (t == 0u) {
         if (shop_item_owned(idx)) { shop_text_draw(lvl_shop_txt_no_room); return 0u; }
         if (!shop_slot_free(idx)) { shop_text_draw(lvl_shop_txt_no_room); return 0u; }
@@ -11456,7 +11594,7 @@ static u8 shop_do_buy(u8 idx) {
         }
         g_player.power_stage++;
     }
-    g_cash -= (u32)pr;
+    if (!god_active()) g_cash -= (u32)pr;
     shop_text_draw(lvl_shop_txt_give_cash);
     shop_cash_draw();
     shop_icons_draw();      /* a mounted weapon can change the icon frame */
@@ -11865,11 +12003,68 @@ static void hs_draw(void);
 static u8  g_intro_done;   /* 1 = the intro list has been shown through once */
 static u8  g_hs_shown;     /* 1 = the highscore page is up and waiting for A */
 
+/* One frame of the starfield. Split out of the title loop so the GET READY
+   transition can use the SAME stars - in the original that screen is not
+   black either, it is the starfield with a line of text over it
+   (title-screen.md: "starfield init + a single line at row 100").
+   frame_tick is the caller's 0..2 counter: t grows by +1 per frame and by +2
+   on every third, so about +1.33 on average. */
+static void stars_tick(u8 frame_tick) {
+    u8 i;
+    for (i = 0u; i < STAR_COUNT; i++) {
+        TStar *s = &g_stars[i];
+        s16 ox, oy;
+        s->t = (u8)(s->t + (frame_tick == 0u ? 2u : 1u));
+        ox = (s16)(((s16)s->dx * (s16)s->t) >> 3);
+        oy = (s16)(((s16)s->dy * (s16)s->t) >> 3);
+        /* Out of the visible area (left, right, top, bottom, with BAR_Y as
+           the lower bound as in game) -> restart, so the stream never
+           breaks. */
+        if (ox <= (s16)(-TITLE_CX) || ox >= (s16)(SCR_W - TITLE_CX) ||
+            oy <= (s16)(-TITLE_CY) || oy >= (s16)(BAR_Y - TITLE_CY)) {
+            star_reset(s);
+            ox = (s16)(((s16)s->dx * (s16)s->t) >> 3);
+            oy = (s16)(((s16)s->dy * (s16)s->t) >> 3);
+        }
+        /* Stars must not fly through or over the logo: SPR_FURTHEST rather
+           than SPR_FRONT puts them BEHIND both scroll planes, so any opaque
+           logo pixel (a or b layer) hides them automatically without a
+           collision box test - everywhere else, on transparent areas, they
+           show through normally. Priority constants are in library.h:
+           SPR_FURTHEST=1<<3, SPR_MIDDLE=2<<3, SPR_FRONT=3<<3.
+           ONE call, not SetSprite + SpriteControl: the second one used to
+           read the control byte back out of the OAM that the first had just
+           written - a far call plus a read-modify-write in the wait-stated
+           K2GE area, per star and per frame. */
+        SetSpriteEx(s->oam, STAR_TILE_VRAM, 0, (u8)(TITLE_CX + ox), (u8)(TITLE_CY + oy),
+                    s->pal, SPR_FURTHEST);
+    }
+}
+
+/* Star tile, palettes and a staggered start (t random over the full range) -
+   without that they would all be visibly "born" in the same frame. Split out
+   of title_screen_run for the same reason as stars_tick. */
+static void stars_load(void) {
+    static const u16 star_tile[8] = { 0, 0, 0, 0x0100u, 0, 0, 0, 0 };   /* 1 px dot, row 3, column 3 */
+    u16 *spal = (u16*)0x8200;
+    u8 i;
+    { volatile u16 *dst = (volatile u16*)0xA000u + (u16)STAR_TILE_VRAM * 8u;
+      for (i = 0u; i < 8u; i++) dst[i] = star_tile[i]; }
+    spal[(u16)STAR_PAL_0 * 4u + 0u] = 0x0000u; spal[(u16)STAR_PAL_0 * 4u + 1u] = 0x0DBDu;
+    spal[(u16)STAR_PAL_1 * 4u + 0u] = 0x0000u; spal[(u16)STAR_PAL_1 * 4u + 1u] = 0x0B99u;
+    spal[(u16)STAR_PAL_2 * 4u + 0u] = 0x0000u; spal[(u16)STAR_PAL_2 * 4u + 1u] = 0x0A77u;
+    for (i = 0u; i < STAR_COUNT; i++) {
+        u8 pick = (u8)(QRandom() % 3u);
+        g_stars[i].oam = i;
+        g_stars[i].pal = (pick == 0u) ? STAR_PAL_0 : (pick == 1u) ? STAR_PAL_1 : STAR_PAL_2;
+        star_reset(&g_stars[i]);
+        g_stars[i].t = (u8)(QRandom() % 120u);
+    }
+}
+
 static void title_screen_run(void) {
     u8  i;
     u8  blink = 0u, blink_tick = 0u;
-    static const u16 star_tile[8] = { 0, 0, 0, 0x0100u, 0, 0, 0, 0 };   /* 1 px dot, row 3, column 3 */
-    u16 *spal = (u16*)0x8200;
 
     /* main() only sets the background colour AFTER title_screen_run(), so
        until then the InitNGPC() default was in place. Quantised to the
@@ -11884,19 +12079,8 @@ static void title_screen_run(void) {
        and builds the first text; intro_tick() in the loop advances it. */
     intro_start();
 
-    /* Upload the star tile (1 pixel) and three palettes - ONE tile is
-       enough, the three shades come purely from the palette, no second or
-       third tile needed. */
-    {
-        volatile u16 *dst = (volatile u16*)0xA000u + (u16)STAR_TILE_VRAM * 8u;
-        for (i = 0u; i < 8u; i++) dst[i] = star_tile[i];
-    }
-    spal[(u16)STAR_PAL_0 * 4u + 0u] = 0x0000u;
-    spal[(u16)STAR_PAL_0 * 4u + 1u] = 0x0DBDu;
-    spal[(u16)STAR_PAL_1 * 4u + 0u] = 0x0000u;
-    spal[(u16)STAR_PAL_1 * 4u + 1u] = 0x0B99u;
-    spal[(u16)STAR_PAL_2 * 4u + 0u] = 0x0000u;
-    spal[(u16)STAR_PAL_2 * 4u + 1u] = 0x0A77u;
+    /* Star tile, palettes and staggered start - see stars_load(). */
+    stars_load();
 
     /* Upload the logo tiles and place them as SCR2(a)+SCR1(b) cells -
        exactly the same a+b six-colour technique as the terrain, only for a
@@ -11921,17 +12105,6 @@ static void title_screen_run(void) {
         PutTile(SCR_1_PLANE, pal2, (u8)(LOGO_TX0 + tx), (u8)(LOGO_TY0 + ty), (u16)(LOGO_TILE_VRAM_BASE + logo_lookup[i].b_vram));
     }
 
-    /* Initialise the stars with a staggered start (t random over the full
-       range), or they would all be visibly "born" in the same frame. Mixed
-       across the three shades. */
-    for (i = 0u; i < STAR_COUNT; i++) {
-        u8 pick = (u8)(QRandom() % 3u);
-        g_stars[i].oam = i;
-        g_stars[i].pal = (pick == 0u) ? STAR_PAL_0 : (pick == 1u) ? STAR_PAL_1 : STAR_PAL_2;
-        star_reset(&g_stars[i]);
-        g_stars[i].t = (u8)(QRandom() % 120u);
-    }
-
     {
     u8 frame_tick = 0u;
     while (1) {
@@ -11943,31 +12116,7 @@ static void title_screen_run(void) {
         frame_tick++;
         if (frame_tick >= 3u) frame_tick = 0u;
 
-        for (i = 0u; i < STAR_COUNT; i++) {
-            TStar *s = &g_stars[i];
-            s16 ox, oy;
-            s->t = (u8)(s->t + (frame_tick == 0u ? 2u : 1u));
-            ox = (s16)(((s16)s->dx * (s16)s->t) >> 3);
-            oy = (s16)(((s16)s->dy * (s16)s->t) >> 3);
-            /* Out of the visible area (left, right, top, bottom, with
-               BAR_Y as the lower bound as in game) -> restart, so the
-               stream never breaks. */
-            if (ox <= (s16)(-TITLE_CX) || ox >= (s16)(SCR_W - TITLE_CX) ||
-                oy <= (s16)(-TITLE_CY) || oy >= (s16)(BAR_Y - TITLE_CY)) {
-                star_reset(s);
-                ox = (s16)(((s16)s->dx * (s16)s->t) >> 3);
-                oy = (s16)(((s16)s->dy * (s16)s->t) >> 3);
-            }
-            SetSprite(s->oam, STAR_TILE_VRAM, 0, (u8)(TITLE_CX + ox), (u8)(TITLE_CY + oy), s->pal);
-            /* Stars must not fly through or over the logo: SPR_FURTHEST
-               rather than SPR_FRONT puts them BEHIND both scroll planes,
-               so any opaque logo pixel (a or b layer) hides them
-               automatically without a collision box test - everywhere
-               else, on transparent areas, they show through normally.
-               Priority constants are in library.h: SPR_FURTHEST=1<<3,
-               SPR_MIDDLE=2<<3, SPR_FRONT=3<<3. */
-            SpriteControl(s->oam, SPR_FURTHEST, 0);
-        }
+        stars_tick(frame_tick);
 
         /* "PRESS A" is gone - the area below the logo now belongs to the
            intro texts. */
@@ -12037,7 +12186,17 @@ static u8 g_split_active;       /* 1 = split active (gameplay only) */
 extern void dma_prog_ch0_u16(u32 src, u32 dst, u32 count);
 extern void dma_prog_ch1_u16(u32 src, u32 dst, u32 count);
 static u16 g_dma_table[152];
-static u8  g_dma_dirty;   /* 1 = the table has to be rebuilt (in the VBlank, see the ISR) */
+/* 0 = nothing to do, 1 = FULL rebuild, 2 = only the band of the intro row
+   currently zooming (see dma_intro_band_build). The distinction is not
+   cosmetic: the full build clears all 152 entries and then walks every text
+   row, and it runs INSIDE THE VBLANK ISR, whose window is 24 185 cycles.
+   During the zoom the height changes almost every frame, so that ran every
+   frame - measured with the calibrated wait states, the title screen's zoom
+   phase took 45 VBlanks instead of 24 (+88 %, about 32 fps instead of 60).
+   That is the stutter visible in the stars, and the ISR overrunning its
+   window is also why the MicroDMA got armed late and the topmost scanlines
+   showed the wrong scroll: the "artefacts above the logo". */
+static u8  g_dma_dirty;
 
 /* Own VBlank handler (replacing the library one): watchdog and VBCounter,
    build the table, and re-arm both DMA channels (MicroDMA is one-shot and
@@ -12146,6 +12305,14 @@ static u8 intro_draw_rows(const char *txt, u8 trow)
     u8  row = 0u;
     u8  i, n, start, cut, k;
 
+    /* !! THE UPLOAD CADENCE STARTS FRESH FOR EVERY TEXT. g_intro_up_n is what
+       decides where intro_upload_glyph() waits for the next VBlank (every 8th
+       glyph), and it used to run on ACROSS texts. So a new text began its
+       upload at an arbitrary point in that cycle - sometimes with only one or
+       two glyphs of room left in the window, and the rest of the batch then
+       wrote tile data into the picture build. Reset here, the first glyph of
+       every text is always preceded by a wait. */
+    g_intro_up_n = 0u;
     for (i = 0u; i < 64u; i++) g_intro_glyph[i] = 0u;
 
     start = 0u;
@@ -12198,11 +12365,11 @@ static u8 intro_draw_rows(const char *txt, u8 trow)
    shop font at 20 characters per line.    The shop font is not in VRAM
    during the game, but on the title screen neither    terrain nor the
    sprite set is loaded, so it is temporarily loaded into the free    area
-   from HS_FONT_VRAM.    SAVING: there is NO save system in this project
-   (no flash writing). The table    lives in RAM and is gone when the
-   machine is switched off. Persistence would be    a job of its own -
-   erasing and programming a flash sector is delicate on real    hardware -
-   and is deliberately not done in passing. */
+   from HS_FONT_VRAM.    SAVING: the table is PERSISTENT - it is written to
+   the cartridge's own flash on a    qualifying game over and read back at
+   boot. See the save block below    (save_geometry_init / save_load /
+   save_store) for where in the cartridge it    goes and why the block number
+   cannot be a build-time constant. */
 #define HS_COUNT        10u
 #define HS_FONT_VRAM   360u   /* 50 tiles of shop font, free during the title screen */
 #define HS_HEAD_TROW     1u   /* heading (2 tile rows) */
@@ -12225,25 +12392,258 @@ static void hs_init(void)
     g_hs_ready = 1u;
 }
 
-/* Insert a new score into the table (to be called at the end of a game). */
-static void hs_submit(u32 sc)
+/* Where would this score land in the table? 0xFF = nowhere.    Strictly
+   GREATER, not greater-or-equal: an equal score does not displace the entry
+   that got there first.    A score of zero never ranks, or dying on the first
+   screen with an empty table    would ask for a name. */
+static u8 hs_rank_for(u32 sc)
 {
-    u8 i, k;
+    u8 i;
     hs_init();
-    for (i = 0u; i < (u8)HS_COUNT; i++) {
-        if (sc > g_hs_score[i]) {
-            for (k = (u8)(HS_COUNT - 1u); k > i; k--) {
-                g_hs_score[k] = g_hs_score[k - 1u];
-                g_hs_name[k][0] = g_hs_name[k - 1u][0];
-                g_hs_name[k][1] = g_hs_name[k - 1u][1];
-                g_hs_name[k][2] = g_hs_name[k - 1u][2];
-            }
-            g_hs_score[i] = sc;
-            g_hs_name[i][0] = (u8)'.'; g_hs_name[i][1] = (u8)'.'; g_hs_name[i][2] = (u8)'.';
-            return;
-        }
-    }
+    if (sc == 0uL) return 0xFFu;
+    for (i = 0u; i < (u8)HS_COUNT; i++) if (sc > g_hs_score[i]) return i;
+    return 0xFFu;
 }
+
+/* Insert at a rank that hs_rank_for() has already worked out. Split from the
+   ranking deliberately: the name is entered BETWEEN the two, so the rank has
+   to be known before the entry screen and the insertion happens after it. */
+static void hs_insert(u8 rank, u32 sc, const u8 *name)
+{
+    u8 k;
+    if (rank >= (u8)HS_COUNT) return;
+    for (k = (u8)(HS_COUNT - 1u); k > rank; k--) {
+        g_hs_score[k] = g_hs_score[k - 1u];
+        g_hs_name[k][0] = g_hs_name[k - 1u][0];
+        g_hs_name[k][1] = g_hs_name[k - 1u][1];
+        g_hs_name[k][2] = g_hs_name[k - 1u][2];
+    }
+    g_hs_score[rank] = sc;
+    g_hs_name[rank][0] = name[0];
+    g_hs_name[rank][1] = name[1];
+    g_hs_name[rank][2] = name[2];
+}
+
+/* ===================== SAVE: THE CARTRIDGE IS THE SAVE MEDIUM =============
+   A Neo Geo Pocket has no save RAM. A game saves by ERASING A BLOCK OF ITS
+   OWN CARTRIDGE and programming its record back in, through two BIOS calls
+   (VECT_FLASHERS then VECT_FLASHWRITE - see FlashSaveRun() in library.c).
+
+   WHERE IT GOES. The manufacturer's block map is 64 KiB blocks all the way
+   up, with the LAST 64 KiB split 32 / 8 / 8 / 16. Those small blocks at the
+   top exist precisely so that rewriting one save does not cost 64 KiB, and
+   the SDK reserves the FINAL one for the system program. So the save belongs
+   in the SECOND 8 KiB BLOCK FROM THE TOP - which on all three card sizes sits
+   exactly 0x6000 below the top of the chip:
+
+       4 Mbit   block  9 @ 0x07A000
+       8 Mbit   block 17 @ 0x0FA000
+      16 Mbit   block 33 @ 0x1FA000
+
+   WHICH CARD - AND WHY IT CANNOT BE A BUILD-TIME CONSTANT. The same ROM ends
+   up on whatever flash cart the player owns, and a block NUMBER means a
+   different ADDRESS on each: block 17 is 0xFA000 on an 8 Mbit card and
+   0x110000 on a 16 Mbit one. Guessing wrong does not fail loudly - it erases
+   somewhere else. The BIOS already answered the question at power-on and left
+   it in its own work RAM at 0x6C58 (0 = no card, 1 = 4 Mbit, 2 = 8, 3 = 16),
+   and that is the very byte the BIOS's own flash routine reads before it
+   touches anything, returning error 0xFF if it is zero. So we read the same
+   byte it does, rather than inventing a second answer.
+
+   THE 256-BYTE BUFFER IS g_dma_table, ON PURPOSE. The record must be 256
+   bytes because that is the BIOS's unit of programming, and there are only
+   about 370 bytes of stack left (the "free" RAM up to 0x6BFF IS the stack,
+   __BaseXSP = end of RAM; the game hangs around 307). A 256-byte array of its
+   own would walk straight into that. g_dma_table is the 304-byte raster split
+   table and it is IDLE exactly when we save: outside STATE_PLAY the VBlank
+   ISR neither rebuilds nor arms the MicroDMA (g_split_active is 0, see
+   my_vblank_isr), and scroll_update marks the table dirty again on the first
+   frame back in play. g_dma_dirty is set here too, so that does not hang on
+   reading another function correctly.
+
+   WHEN IT IS WRITTEN: once, on a qualifying game over, after the name has
+   been entered. Not on every fps toggle - an erase costs about a second and
+   wears the block. */
+#define SAVE_SIZE        256u     /* the BIOS programs in units of 256 bytes */
+#define SAVE_VERSION       1u
+#define BIOS_CARD_TYPE   (*(volatile u8*)0x6C58u)
+#define CART_BASE        0x200000uL
+
+/* The record laid out by hand rather than as a struct: this is a format that
+   a later build has to be able to read, and cc900 is free to pad a struct. */
+#define SAVE_OFF_MAGIC     0u     /* 'X','N','S' */
+#define SAVE_OFF_VERSION   3u
+#define SAVE_OFF_FPS       4u
+#define SAVE_OFF_SUM       6u     /* u16, low byte first */
+#define SAVE_OFF_TABLE     8u     /* HS_COUNT entries of SAVE_ENTRY_SIZE */
+#define SAVE_ENTRY_SIZE    7u     /* score u32 + three name characters */
+
+/* ONE BYTE OF STATE, AND THAT ON SUFFERANCE. Every static byte added here
+   comes straight out of the stack: the free space above the last variable IS
+   the stack (__BaseXSP = end of RAM), and the game was MEASURED needing 316
+   bytes of it (tools/probe_stack.py). So the card geometry is deliberately
+   not cached - it is worked out again on each of the two occasions it is
+   needed, twice in a whole session, and parked directly in the library's
+   FlashSave* globals, which have to exist anyway because the __ASM block
+   names them. */
+static u8 g_save_status;          /* 0 = ok, see save_store() for the codes */
+
+/* Bench switch: write a known record at boot, so that a probe can prove the
+   whole chain - BIOS erase, BIOS program, and the bytes actually ARRIVING in
+   the cartridge - without playing a game through to its end. 0 for a release
+   build. */
+#define SAVE_SELFTEST 0
+
+/* 1 = a card we know how to save to. Leaves the geometry in the library's
+   FlashSaveBlock / FlashSaveOffset, which is where FlashSaveRun() reads it. */
+static u8 save_geometry(void)
+{
+    u8 t = BIOS_CARD_TYPE;
+    if      (t == 1u) { FlashSaveBlock =  9u; FlashSaveOffset = 0x07A000uL; }
+    else if (t == 2u) { FlashSaveBlock = 17u; FlashSaveOffset = 0x0FA000uL; }
+    else if (t == 3u) { FlashSaveBlock = 33u; FlashSaveOffset = 0x1FA000uL; }
+    else              { FlashSaveBlock =  0u; FlashSaveOffset = 0uL; return 0u; }
+    return 1u;
+}
+
+/* Rotating sum, so that the ORDER of the bytes matters - a plain addition
+   would accept a record whose entries had been shuffled. The two checksum
+   bytes are skipped, since they cannot check themselves. */
+static u16 save_checksum(const u8 *p)
+{
+    u16 s = 0x1234u;
+    u16 i;
+    for (i = 0u; i < (u16)SAVE_SIZE; i++) {
+        if (i == (u16)SAVE_OFF_SUM) continue;
+        if (i == (u16)(SAVE_OFF_SUM + 1u)) continue;
+        s = (u16)(s + (u16)p[i]);
+        s = (u16)(((u16)(s << 1)) | ((u16)(s >> 15)));
+    }
+    return s;
+}
+
+/* Build the record and program it. 1 = the bytes are in the cartridge.
+   VERIFIED BY READING BACK, deliberately: "the BIOS reported SYS_SUCCESS" and
+   "the data is in the cartridge" are two different claims. */
+static u8 save_store(void)
+{
+    u8 *b = (u8*)g_dma_table;
+    u16 i, sum;
+    u8  k;
+
+    if (!save_geometry()) { g_save_status = 1u; return 0u; }
+
+    for (i = 0u; i < (u16)SAVE_SIZE; i++) b[i] = 0u;
+    b[SAVE_OFF_MAGIC]      = (u8)'X';
+    b[SAVE_OFF_MAGIC + 1u] = (u8)'N';
+    b[SAVE_OFF_MAGIC + 2u] = (u8)'S';
+    b[SAVE_OFF_VERSION]    = (u8)SAVE_VERSION;
+    b[SAVE_OFF_FPS]        = g_fps_mode;
+    for (k = 0u; k < (u8)HS_COUNT; k++) {
+        u16 o  = (u16)((u16)SAVE_OFF_TABLE + (u16)k * (u16)SAVE_ENTRY_SIZE);
+        u32 sc = g_hs_score[k];
+        b[o]      = (u8)(sc & 0xFFuL);
+        b[o + 1u] = (u8)((sc >> 8) & 0xFFuL);
+        b[o + 2u] = (u8)((sc >> 16) & 0xFFuL);
+        b[o + 3u] = (u8)((sc >> 24) & 0xFFuL);
+        b[o + 4u] = g_hs_name[k][0];
+        b[o + 5u] = g_hs_name[k][1];
+        b[o + 6u] = g_hs_name[k][2];
+    }
+    sum = save_checksum(b);
+    b[SAVE_OFF_SUM]      = (u8)(sum & 0xFFu);
+    b[SAVE_OFF_SUM + 1u] = (u8)(sum >> 8);
+
+    /* Block and offset are already in place from save_geometry() above.
+       !! FlashSaveUnits MUST be set. It is the BIOS's count of 256-byte units
+       and it is NOT optional: with 0 the routine never terminates - it
+       programs our record correctly first and then keeps going, with
+       interrupts masked by the swi, so the console is simply dead. The
+       record in the cartridge looks perfect while it happens, which is why a
+       probe that only compares the saved bytes calls this a success. */
+    FlashSaveSrc     = (u32)g_dma_table;
+    FlashSaveUnits   = 1u;
+    FlashEraseResult = 0xFFu;
+    FlashWriteResult = 0xFFu;
+    FlashSaveRun();
+
+    /* The split table has just served as a scratch buffer. */
+    g_dma_dirty = 1u;
+
+    if (FlashEraseResult != 0u) { g_save_status = 2u; return 0u; }
+    if (FlashWriteResult != 0u) { g_save_status = 3u; return 0u; }
+    {
+        const volatile u8 *rec = (const volatile u8*)(CART_BASE + FlashSaveOffset);
+        for (i = 0u; i < (u16)SAVE_SIZE; i++)
+            if (rec[i] != b[i]) { g_save_status = 4u; return 0u; }
+    }
+    g_save_status = 0u;
+    return 1u;
+}
+
+/* Read the record at boot. Anything that does not verify is treated as "no
+   save at all": half a save is worse than none, because it looks like a
+   working one. */
+static u8 save_load(void)
+{
+    u8 *b = (u8*)g_dma_table;
+    u16 i, sum;
+    u8  k;
+
+    g_dma_dirty = 1u;
+    if (!save_geometry()) return 0u;
+    {
+        const volatile u8 *rec = (const volatile u8*)(CART_BASE + FlashSaveOffset);
+        for (i = 0u; i < (u16)SAVE_SIZE; i++) b[i] = rec[i];
+    }
+
+    if (b[SAVE_OFF_MAGIC]      != (u8)'X') return 0u;
+    if (b[SAVE_OFF_MAGIC + 1u] != (u8)'N') return 0u;
+    if (b[SAVE_OFF_MAGIC + 2u] != (u8)'S') return 0u;
+    if (b[SAVE_OFF_VERSION]    != (u8)SAVE_VERSION) return 0u;
+    sum = save_checksum(b);
+    if (b[SAVE_OFF_SUM]      != (u8)(sum & 0xFFu)) return 0u;
+    if (b[SAVE_OFF_SUM + 1u] != (u8)(sum >> 8))    return 0u;
+
+    hs_init();
+    for (k = 0u; k < (u8)HS_COUNT; k++) {
+        u16 o = (u16)((u16)SAVE_OFF_TABLE + (u16)k * (u16)SAVE_ENTRY_SIZE);
+        u32 sc;
+        u8  c, n;
+        /* Rebuilt byte by byte rather than as one nested expression - cc900
+           wants 32-bit work split up (see the notes on its quirks). */
+        sc  = (u32)b[o + 3u];
+        sc <<= 8; sc |= (u32)b[o + 2u];
+        sc <<= 8; sc |= (u32)b[o + 1u];
+        sc <<= 8; sc |= (u32)b[o];
+        g_hs_score[k] = sc;
+        for (n = 0u; n < 3u; n++) {
+            c = b[o + 4u + n];
+            /* Clamp to what the shop font can actually draw. The checksum
+               already rules out a damaged record; this rules out a valid one
+               that a different build wrote with a wider character set. */
+            if (c < (u8)LVL_SHOP_FONT_ASCII_MIN || c > (u8)LVL_SHOP_FONT_ASCII_MAX) c = (u8)'.';
+            g_hs_name[k][n] = c;
+        }
+        g_hs_name[k][3] = 0u;
+    }
+    if (b[SAVE_OFF_FPS] == 20u || b[SAVE_OFF_FPS] == 30u) g_fps_mode = b[SAVE_OFF_FPS];
+    return 1u;
+}
+
+#if SAVE_SELFTEST
+static void save_selftest(void)
+{
+    hs_init();
+    g_hs_score[0] = 1234567uL;
+    g_hs_name[0][0] = (u8)'A'; g_hs_name[0][1] = (u8)'B'; g_hs_name[0][2] = (u8)'C';
+    g_hs_score[1] = 65432uL;
+    g_hs_name[1][0] = (u8)'X'; g_hs_name[1][1] = (u8)'Y'; g_hs_name[1][2] = (u8)'Z';
+    g_hs_score[2] = 999uL;
+    g_hs_name[2][0] = (u8)'0'; g_hs_name[2][1] = (u8)'1'; g_hs_name[2][2] = (u8)'2';
+    (void)save_store();
+}
+#endif
 
 /* Put the shop font into the free VRAM area. */
 static void hs_font_upload(void)
@@ -12270,6 +12670,13 @@ static void hs_putc(u8 col, u8 row, u8 ch)
     u8  pal;
     if (col >= 20u) return;
     if (ch >= 97u && ch <= 122u) ch = (u8)(ch - 32u);
+    /* A SPACE IS BLANK, whatever the table says. lvl_shop_font_tile[0] - the
+       entry for ASCII 32 - points at glyph 37 in the current export instead
+       of at 0, so every space came out as a visible mark: "ENTER.NAME". The
+       export is not ours to hand-edit (it would be gone with the next one),
+       and the character is blank by definition, so it is caught here. The
+       table entry still wants fixing in the tool. */
+    if (ch == 32u) { m2[(u16)row * 32u + col] = 0u; return; }
     if (ch < (u8)LVL_SHOP_FONT_ASCII_MIN || ch > (u8)LVL_SHOP_FONT_ASCII_MAX) {
         m2[(u16)row * 32u + col] = 0u; return; }
     g = lvl_shop_font_tile[ch - (u8)LVL_SHOP_FONT_ASCII_MIN];
@@ -12326,6 +12733,243 @@ static void hs_draw(void)
     }
 }
 
+/* ===================== TRANSITION SCREENS =====================
+   The original puts a screen between the phases of play (title-screen.md,
+   "Game flow"):
+
+       "LOADING LEVEL 1"    row 12   at the start
+       "GET READY PLAYER n" row 100  at the start and after EVERY death,
+                                     over the STARFIELD, WAITING FOR A KEY
+                                     (1000:5926 - the same machinery as the
+                                     "INSERT OTHER DISK" prompt)
+
+   THE BIG ALPHABET, not the shop font: the same 16x16 letters GAME OVER and
+   HIGH SCORE use. intro_draw_rows() word-wraps at INTRO_COLS (10 characters),
+   so "GET READY PLAYER 1" comes out as two centred rows - the original's
+   single line does not fit across 160 px.
+
+   AT THE SHOP THE ORIGINAL HAS NO TEXT SCREEN. It animates doors open
+   (counters 48/68, 4 per frame, a clang when open) and leaves through a melt
+   transition (shop.md). The text screen there is a deliberate deviation, on
+   the user's call - the door animation is to come later, and until then the
+   black screen covers the VRAM reload that happens at that point anyway.
+
+   WHY THIS IS ALSO THE RIGHT PLACE TO LOAD: the callers rebuild character RAM
+   around these moments (build_lvl1, spr_tiles_upload, shop_enter). The glyphs
+   go to INTRO_VRAM (200+), inside the TERRAIN zone - which every caller
+   rebuilds immediately afterwards anyway. So the screen is up while the
+   loading happens and the loading overwrites it only once it is gone. */
+#define TRANS_TROW    7u   /* two text rows of 16 px, centred on 19 tile rows */
+/* !! IN VBLANKS, NOT IN GAME FRAMES - AND THEREFORE WITHOUT FPS_DUR. The
+   wait loop below hangs off wait_vblank(), so it counts 60 Hz fields. The
+   first version used FPS_DUR(): that scales GAME FRAMES and made the screen
+   SHORTER at 20 fps instead of equally long (measured 45 rather than the
+   expected 150 VBlanks). VBlanks run at 60 Hz in both frame rates, so a
+   fixed number is exactly right here.
+   TRANS_MIN  - lead-in before FIRE counts at all, on the screens that wait
+                for it. Its only job is to stop a held button from clicking
+                the screen away unread.
+   TRANS_SHOW - dwell time of the screens that do NOT wait for fire. The
+                player really does read the loading screens, so those get
+                the longer time (user request). */
+#define TRANS_MIN    40u   /* VBlanks, about 0.7 s */
+#define TRANS_SHOW  150u   /* VBlanks, about 2.5 s */
+
+/* stars     1 = starfield behind it, as the original does for GET READY
+   wait_fire 1 = stays up until FIRE, as the original does; 0 = short and
+               fixed, for the pure loading screens.
+   Leaves the screen BLACK and the OAM empty, so the caller can do its VRAM
+   work straight afterwards and still be unseen. */
+static void transition_run(const char *txt, u8 stars, u8 wait_fire) {
+    volatile u16 *m2 = SCROLL_PLANE_2;
+    volatile u16 *m1 = SCROLL_PLANE_1;
+    u16 c;
+    u8  r, f, tick = 0u;
+
+    /* Raster split off and the scroll registers back to zero - the MicroDMA
+       leaves them wherever the last game frame put them, and every screen
+       drawn afterwards would be rotated by that much (the game over path
+       showed exactly that). */
+    g_split_active = 0u;
+    HW_DMA0V = 0u; HW_DMA1V = 0u;
+    wait_vblank();
+    oam_reset_all();
+    SCR1_X = 0; SCR1_Y = 0; SCR2_X = 0; SCR2_Y = 0;
+    ClearScreen(SCR_1_PLANE);
+    ClearScreen(SCR_2_PLANE);
+    for (r = 0u; r < 19u; r++)
+        for (c = 0u; c < 20u; c++) { m2[(u16)r * 32u + c] = 0u; m1[(u16)r * 32u + c] = 0u; }
+
+    intro_load_pals();
+    intro_draw_at(txt, (u8)TRANS_TROW);
+    if (stars) stars_load();
+
+    /* A MINIMUM TIME BEFORE FIRE COUNTS. The player is usually holding or
+       tapping fire when this appears - straight out of play, or from the
+       button that started the game. Taking the first edge would let the
+       screen flash past unread; same reason as g_over_lock. */
+    {
+        u8 dauer = wait_fire ? (u8)TRANS_MIN : (u8)TRANS_SHOW;
+        for (f = 0u; f < dauer; f++) {
+            wait_vblank();
+            input_update();
+            Sounds_Update();
+            if (stars) { tick++; if (tick >= 3u) tick = 0u; stars_tick(tick); }
+        }
+    }
+    if (wait_fire) {
+        while (1) {
+            wait_vblank();
+            input_update();
+            Sounds_Update();
+            if (stars) { tick++; if (tick >= 3u) tick = 0u; stars_tick(tick); }
+            if (g_pad_pressed & J_A) break;
+        }
+    }
+
+    /* Text and stars away. The caller's uploads may now overwrite the glyph
+       tiles; nothing of it is on screen any more. */
+    if (stars) { u8 s; for (s = 0u; s < STAR_COUNT; s++) UnsetSprite(g_stars[s].oam); }
+    for (r = 0u; r < 19u; r++)
+        for (c = 0u; c < 20u; c++) { m2[(u16)r * 32u + c] = 0u; m1[(u16)r * 32u + c] = 0u; }
+}
+
+/* ===================== NAME ENTRY =====================    Runs on the black
+   game over screen when the score has made the table. Three    characters,
+   chosen with UP/DOWN and stepped through with LEFT/RIGHT; A moves on    and
+   confirms on the last one, B steps back, OPTION confirms straight away.
+   VRAM: the 16x16 heading allocates from INTRO_VRAM (200) upwards, 8 tiles
+   per    glyph, and the shop font sits at HS_FONT_VRAM (360). A ten-character
+   heading    is 80 tiles, so it stops at 279 and the two cannot meet - the
+   same budget    the highscore page itself runs on. Keep the heading at ten
+   characters.    THE INPUT LOCK IS NOT COSMETIC: the player is usually
+   holding or mashing A    for autofire at the moment of death, so without it
+   the first frames of the    entry screen would consume those presses and
+   confirm the default name before    anyone had seen the screen. */
+#define NAME_CHARS       3u
+#define NAME_SET_COUNT  39u    /* A-Z, 0-9, '.', '-', space */
+#define NAME_ROW        13u    /* tile row of the three characters */
+#define NAME_COL0        7u    /* first character, two columns apart */
+#define NAME_LOCK_FRAMES 24u
+/* Same idea for the page AFTER the entry: one A press there restarts the
+   game, and the player has just been tapping A to enter their name. */
+#define OVER_LOCK_FRAMES 30u
+
+static u8 g_over_lock;              /* frames before STATE_OVER accepts A */
+static u8 g_name_sel[NAME_CHARS];   /* character set index per position */
+static u8 g_name_pos;
+static u8 g_name_rank;              /* rank the score earned, 0xFF = none */
+static u8 g_name_lock;
+static u8 g_name_blink;
+
+/* The set as arithmetic rather than a table - cc900 is awkward with tables of
+   character pointers, and this needs no storage at all. */
+static u8 name_char_of(u8 idx)
+{
+    if (idx < 26u) return (u8)(65u + idx);            /* A..Z */
+    if (idx < 36u) return (u8)(48u + (idx - 26u));    /* 0..9 */
+    if (idx == 36u) return (u8)'.';
+    if (idx == 37u) return (u8)'-';
+    return (u8)' ';
+}
+
+/* The three characters. Redrawn on a change and on the blink, never every
+   frame.    THE CHARACTER BEING EDITED BLINKS. The first version only put a
+   blinking dash on the row BELOW it, and that is not where the eye is - the
+   user could not tell which of the three positions they were on. The dash
+   stays, but STEADY: it marks the position even when the selected character
+   is a space, which would otherwise be invisible in both blink phases. */
+static void name_chars_draw(void)
+{
+    u8 i;
+    for (i = 0u; i < (u8)NAME_CHARS; i++) {
+        u8 col    = (u8)(NAME_COL0 + i * 2u);
+        u8 aktiv  = (u8)(i == g_name_pos);
+        u8 ch     = name_char_of(g_name_sel[i]);
+        if (aktiv && (g_name_blink & 8u) != 0u) ch = (u8)' ';   /* blink phase: off */
+        hs_putc(col, (u8)NAME_ROW, ch);
+        hs_putc(col, (u8)(NAME_ROW + 1u), aktiv ? (u8)'-' : (u8)' ');
+    }
+}
+
+static void name_entry_start(void)
+{
+    u8 i;
+    volatile u16 *m2 = SCROLL_PLANE_2;
+    volatile u16 *m1 = SCROLL_PLANE_1;
+    u16 c;
+    u8  r;
+
+    for (r = 0u; r < 19u; r++)
+        for (c = 0u; c < 20u; c++) { m2[(u16)r * 32u + c] = 0u; m1[(u16)r * 32u + c] = 0u; }
+
+    hs_font_upload();
+    intro_load_pals();
+    intro_draw_at("NEW RECORD", 2u);   /* ten characters, one row - as "HIGH SCORE" */
+
+    hs_puts(2u, 7u, "RANK");
+    if ((u8)(g_name_rank + 1u) >= 10u) { hs_putc(7u, 7u, (u8)'1'); hs_putc(8u, 7u, (u8)'0'); }
+    else                                 hs_putc(8u, 7u, (u8)(48u + (u8)(g_name_rank + 1u)));
+    hs_put_score(11u, 7u, g_score);
+
+    /* The controls have to be ON THE SCREEN. First version only said
+       "A NEXT / B BACK / OPTION CONFIRM" and left out the one key that
+       actually changes anything - the user's report was "NEW RECORD and
+       nothing happens", then OPTION out of desperation.
+       Only these characters exist in the shop font: space, ! , - . ? digits
+       and A-Z (lvl_shop_font_tile) - so no arrows and no "=". */
+    hs_puts(4u, 10u, "ENTER NAME");
+    hs_puts(2u, 11u, "UP DOWN  LETTER");
+    hs_puts(1u, 16u, "A NEXT   B BACK");
+    hs_puts(1u, 17u, "OPTION  CONFIRM");
+
+    for (i = 0u; i < (u8)NAME_CHARS; i++) g_name_sel[i] = 0u;   /* "AAA" */
+    g_name_pos   = 0u;
+    g_name_lock  = (u8)NAME_LOCK_FRAMES;
+    g_name_blink = 0u;
+    name_chars_draw();
+}
+
+/* One frame of the entry screen. 1 = the player has confirmed. */
+static u8 name_entry_tick(void)
+{
+    u8 redraw = 0u;
+
+    g_name_blink++;
+    if (g_name_lock) { g_name_lock--; return 0u; }
+
+    if (g_pad_pressed & J_UP) {
+        g_name_sel[g_name_pos] = (u8)((g_name_sel[g_name_pos] + 1u) % (u8)NAME_SET_COUNT);
+        redraw = 1u;
+    }
+    if (g_pad_pressed & J_DOWN) {
+        g_name_sel[g_name_pos] = (u8)((g_name_sel[g_name_pos] + (u8)(NAME_SET_COUNT - 1u)) % (u8)NAME_SET_COUNT);
+        redraw = 1u;
+    }
+    if ((g_pad_pressed & J_RIGHT) && g_name_pos < (u8)(NAME_CHARS - 1u)) { g_name_pos++; redraw = 1u; }
+    if ((g_pad_pressed & J_LEFT)  && g_name_pos > 0u)                    { g_name_pos--; redraw = 1u; }
+    if ((g_pad_pressed & J_B)     && g_name_pos > 0u)                    { g_name_pos--; redraw = 1u; }
+
+    if (g_pad_pressed & J_OPTION) return 1u;
+    if (g_pad_pressed & J_A) {
+        if (g_name_pos < (u8)(NAME_CHARS - 1u)) { g_name_pos++; redraw = 1u; }
+        else return 1u;
+    }
+
+    if (redraw || (g_name_blink & 7u) == 0u) name_chars_draw();
+    return 0u;
+}
+
+/* Turn the three set indices into characters. The caller supplies the buffer
+   - a LOCAL one, because it lives for two statements and a static would cost
+   four bytes of stack for the whole session (see the note on g_save_status). */
+static void name_entry_chars(u8 *out)
+{
+    u8 i;
+    for (i = 0u; i < (u8)NAME_CHARS; i++) out[i] = name_char_of(g_name_sel[i]);
+    out[NAME_CHARS] = 0u;
+}
+
 static void intro_load_pals(void)
 {
     u8 i;
@@ -12345,6 +12989,15 @@ static void intro_clear_block(void)
     volatile u16 *m2 = SCROLL_PLANE_2;
     volatile u16 *m1 = SCROLL_PLANE_1;
     u8 r, c;
+    /* INTO THE VBLANK, like the glyph upload. This writes 320 words into the
+       tilemap and had no synchronisation at all, so on a text change it ran
+       straight into the picture build - the one hardware fault the emulator
+       cannot show (see the note on VRAM writes during the picture build).
+       Symptom: "when a new text block comes there are briefly artefacts at
+       the top" (user report). 320 words fit comfortably inside the 24 185
+       cycle window; the wait only has to make sure they START at its
+       beginning. */
+    wait_vblank();
     for (r = (u8)INTRO_TROW; r < (u8)(INTRO_TROW + INTRO_ROWS * 2u); r++)
         for (c = 0u; c < 20u; c++) { m2[(u16)r * 32u + c] = 0u; m1[(u16)r * 32u + c] = 0u; }
 }
@@ -12393,7 +13046,9 @@ static void intro_tick(void)
            costs ISR time and can delay the DMA start. Symptom otherwise:
            artefacts above the logo, like a reflection. */
         u8 nh = (u8)(2u + ((14u * g_intro_f) / 24u));
-        if (nh != g_intro_h) { g_intro_h = nh; g_dma_dirty = 1u; }
+        /* Only the band changes here - request the CHEAP rebuild (2), and
+           never downgrade a full one that is still pending. */
+        if (nh != g_intro_h) { g_intro_h = nh; if (g_dma_dirty != 1u) g_dma_dirty = 2u; }
         if (g_intro_f >= 24u) { g_intro_h = 16u; g_intro_ph = 1u; g_intro_f = 0u; }
     } else if (g_intro_ph == 1u) {   /* the row holds briefly, then the next one */
         if (g_intro_f >= 10u) {
@@ -12437,6 +13092,32 @@ static void intro_stop(void)
     SCR1_X = 0; SCR1_Y = 0; SCR2_X = 0; SCR2_Y = 0;
 }
 
+/* ONLY the 16 scanlines of the row that is zooming right now.    Everything
+   else in the table stays valid while the height changes: the rows already
+   finished are 1:1 and the rows still to come are the empty mapping, and
+   both only change when g_intro_cur or the text changes - and those set a
+   FULL rebuild (1). The active row's band is confined to [ry0, ry0+16) by
+   construction (top = ry0+8-h/2 with h <= 16), so rewriting that window is
+   exactly what the full build would produce there.    Same arithmetic as in
+   dma_table_build, deliberately duplicated rather than factored out: this
+   runs in the VBlank ISR, and a far call plus parameter passing is
+   measurable there. */
+static void dma_intro_band_build(void) {
+    u16 ry0  = (u16)(((u16)INTRO_TROW + (u16)g_intro_cur * 2u) * 8u);
+    u16 h    = g_intro_h ? (u16)g_intro_h : 1u;
+    u16 top  = (u16)((ry0 + 8u) - (h / 2u));
+    u16 step = (u16)((16u << 6) / h);
+    u16 acc  = 0u;
+    u16 y;
+    for (y = ry0; y < (u16)(ry0 + 16u) && y < 152u; y++)
+        g_dma_table[y] = (u16)(((u16)(250u - y) & 0xFFu) << 8);
+    for (y = top; y < (u16)(top + h) && y < 152u; y++) {
+        u16 sy = (u16)((ry0 + (acc >> 6)) - y);
+        acc = (u16)(acc + step);
+        g_dma_table[y] = (u16)((sy & 0xFFu) << 8);
+    }
+}
+
 static void dma_table_build(void) {
     u8 i;
     /* FIXED split at y=144: the terrain scrolls smoothly line by line up
@@ -12461,6 +13142,12 @@ static void dma_table_build(void) {
        the start. */
     if (g_intro_on) {
         u16 r;
+        /* Clearing only from the text block down was tried and MEASURED at
+           exactly zero (34 vs 33 VBlanks over 24 iterations, with a full
+           rebuild forced every frame). Not kept: no gain, and it would have
+           made this function depend on intro_start() having pre-zeroed the
+           top. The artefacts on a text change came from somewhere else - see
+           intro_clear_block() and g_intro_up_n. */
         for (i = 0u; i < 152u; i++) g_dma_table[i] = 0u;   /* default: 1:1 */
         for (r = 0u; r < (u16)g_intro_rows; r++) {
             u16 ry0 = (u16)(((u16)INTRO_TROW + r * 2u) * 8u);   /* final position, 16 px high */
@@ -12505,7 +13192,8 @@ static void __interrupt my_vblank_isr(void) {
        field and the bar flickered. After that, only ARM it (MicroDMA is
        one-shot, re-armed every VBlank). */
     if (g_split_active) {
-        if (g_dma_dirty) { dma_table_build(); g_dma_dirty = 0u; }
+        if (g_dma_dirty == 1u)      { dma_table_build();      g_dma_dirty = 0u; }
+        else if (g_dma_dirty == 2u) { dma_intro_band_build(); g_dma_dirty = 0u; }
         HW_DMA0V = 0u; HW_DMA1V = 0u;                       /* trigger off while programming */
         dma_prog_ch0_u16((u32)g_dma_table, 0x8032u, 152u);  /* CH0 -> SCR1_X/Y */
         dma_prog_ch1_u16((u32)g_dma_table, 0x8034u, 152u);  /* CH1 -> SCR2_X/Y */
@@ -12626,6 +13314,42 @@ void main(void) {
     g_neg_on   = 0u;
     g_neg_want = 0u;
     g_sbomb_flash = 0u;
+    /* !! REAL HARDWARE DOES NOT CLEAR RAM. Every static without an
+       initialiser holds rubbish at power-on, and the three above were reset
+       here for exactly that reason. These are the rest of the ones that are
+       READ BEFORE ANYTHING WRITES THEM - and leaving them out cost the whole
+       title screen (user report, hardware only, invisible in the emulator
+       because it DOES clear RAM):
+
+         g_hs_shown != 0  ->  the title loop never calls intro_tick(). What
+           stays on screen is the single text band intro_start() built, at
+           its initial height of 2 scanlines - "I only see one pixel row" -
+           and since g_intro_done is never reached, THE HIGHSCORE PAGE NEVER
+           COMES EITHER. Both of the reported symptoms, one byte.
+         g_hs_ready != 0  ->  hs_init() returns early and the table keeps
+           whatever was in RAM.
+         g_split_active / g_dma_dirty  ->  read by the VBlank ISR, which is
+           installed a few lines below in split_test_init(). Garbage there
+           arms the MicroDMA with a scroll table that is also garbage.
+         g_intro_up_n  ->  decides WHERE the glyph upload waits for the next
+           VBlank. Out of phase, an upload runs into the picture build, which
+           is the hardware fault this was fixed for in the first place.
+
+       Reproduce it in the emulator with
+           m.write(0x4000, bytes([0xA5]) * 0x2C00)
+       right after the reset - that is what turned "works here" into a
+       measurable failure. */
+    g_hs_shown     = 0u;
+    g_hs_ready     = 0u;
+    g_intro_up_n   = 0u;
+    g_intro_done   = 0u;
+    g_split_active = 0u;
+    g_dma_dirty    = 1u;
+    g_god          = 0u;
+    g_over_lock    = 0u;
+    g_name_lock    = 0u;
+    g_name_rank    = 0xFFu;
+    g_save_status  = 0u;
     InitNGPC();
     K2GE_2D_CONTROL &= (u8)~K2GE_NEG_BIT;
     /* Force the full CPU clock of 6.144 MHz: the game never set the clock
@@ -12661,7 +13385,25 @@ void main(void) {
        OPTION can switch it (see title_screen_run). Without an initialiser
        g_fps_mode would be garbage on real hardware, which does not zero
        RAM. */
+    /* THE GAME STARTS IN THE SCORE VIEW, and OPTION switches from there to
+       the VBlank counter - which is also what turns the invulnerability on
+       (see player_damage). So the normal state is: score visible, ship
+       mortal; measuring is the thing you have to ask for, not the thing you
+       have to remember to switch off.
+       Set explicitly rather than relying on the static being zero: real
+       hardware does not clear RAM (see the note on statics without an
+       initialiser), and this byte decides whether the player can die. */
+    g_score_view = 1u;
     g_fps_mode = (u8)FPS_MODE_DEFAULT;
+    /* The saved record, BEFORE the title screen: it carries the highscore
+       table the title screen is about to show, and the frame rate the player
+       last used - which has to be in place before fps_apply() below. It uses
+       g_dma_table as its buffer, which is safe here because the raster split
+       only starts with intro_start() inside title_screen_run(). */
+    (void)save_load();
+#if SAVE_SELFTEST
+    save_selftest();
+#endif
     /* fps_apply() ALREADY HERE, not only after the title screen. Otherwise
        g_fps_div is 0 during title and intro - the frame cap is then
        without effect, FPS_ATICK is 0 (animations stand still),
@@ -12715,6 +13457,20 @@ void main(void) {
        a poor seed. Now VBCounter has reached a genuinely varying, player-
        dependent value by the time A is pressed. */
     SeedRandom();
+    /* "LOADING LEVEL 1" while the level is built, then "GET READY PLAYER 1"
+       over the starfield until fire - the original's order and its wait
+       (title-screen.md, steps 3 and 4). */
+    /* !! BOTH SCREENS BEFORE game_start(), NOT BETWEEN THEM. transition_run()
+       CLEARS the tilemap - with it behind game_start(), the GET READY screen
+       wiped exactly the starting rows that lvl1_prefill(0) had just filled
+       in. The game then streamed terrain again only from row 19 on, and it
+       looked as if "the ship starts much further into the map" (user
+       report). Putting game_start() last also means its setup runs on the
+       black picture transition_run leaves behind - so it stays invisible.
+       Restoring palettes and tiles is no longer needed here: game_start()
+       does terrain, bar and sprites itself anyway. */
+    transition_run("LOADING LEVEL 1", 0u, 0u);
+    transition_run("GET READY PLAYER 1", 1u, 1u);
     game_start();
 
     {
@@ -12798,8 +13554,10 @@ void main(void) {
 
         if (g_state == STATE_PLAY) {
             /* Benchmark: OPTION plus UP/DOWN cycles the profiling block
-               (see above). OPTION alone does nothing (god mode is
-               permanently on via GOD_MODE=1). */
+               (see above). OPTION alone switches the display - and with it
+               the invulnerability. The game STARTS in the score view and
+               mortal (set in main); OPTION goes from there to the VBlank
+               counter plus god mode, and back. See player_damage(). */
 #if WORM_TEST_MODE
             if (g_pad_pressed & J_OPTION) g_paused ^= 1u;   /* test aid: toggle pause (OPTION) */
             if (!g_paused)
@@ -12981,7 +13739,24 @@ void main(void) {
             neg_flush();
             terr_sec_step();      /* stream the terrain section in steps, same timing */
             spr_sec_step();       /* sprite section, same timing */
-            if (g_respawn_pending) respawn_do();   /* re-entry, same timing */
+            /* Re-entry. "GET READY PLAYER 1" over the starfield first and
+               until fire, as in the original after EVERY death
+               (death-respawn.md). It runs BEFORE respawn_do(), so the
+               terrain rebuild and the world wipe happen behind the screen
+               rather than in view; afterwards the OAM and the tiles the
+               glyphs sat on have to be put back. */
+            if (g_respawn_pending) {
+                transition_run("GET READY PLAYER 1", 1u, 1u);
+                respawn_do();
+                oam_reset_all();
+                /* Bar palettes back - intro_load_pals() in the transition
+                   overwrote SCR2 4..13, palette 4 included (see the note in
+                   main). respawn_do() rebuilds the terrain but not the bar. */
+                build_bar_assets();
+                spr_tiles_upload();
+                spr_pal_load();
+                g_score_last_shown = 0xFFFFu;
+            }
             shop_delay_tick();    /* shop trigger: countdown, state change at the end of the frame */
 #if PAL_RELOAD_TEST
             /* hardware diagnosis, see PAL_RELOAD_TEST. Once, at the end of
@@ -13005,19 +13780,78 @@ void main(void) {
                    - otherwise the alphabet flashes up briefly in the
                    terrain colours    (intro_load_pals occupies SCR2 4..13,
                    including terrain and bar slots). */
-                g_state = STATE_OVER;
                 g_split_active = 0u;          /* raster split off, as in the shop */
                 HW_DMA0V = 0u; HW_DMA1V = 0u;
+                /* !! SCROLL BACK TO ZERO, exactly as shop_enter() does. The
+                   MicroDMA writes SCR1/SCR2 x+y per scanline while playing;
+                   switching it off leaves the registers on their LAST value
+                   (measured: y = 211). Every screen drawn afterwards is then
+                   rotated by that much through the 32-row tilemap torus -
+                   the user's "the numbers look completely shifted". It hit
+                   the plain GAME OVER screen too, where a single line of
+                   text made it easy to miss. */
+                SCR1_X = 0; SCR1_Y = 0; SCR2_X = 0; SCR2_Y = 0;
                 wait_vblank();
                 oam_reset_all();              /* ship, enemies and shots away */
                 ClearScreen(SCR_1_PLANE);
                 ClearScreen(SCR_2_PLANE);
                 intro_load_pals();
-                intro_draw_at("GAME OVER", 8u);
+                /* Did the run make the table? The rank has to be settled
+                   BEFORE the name is asked for, so that the entry screen can
+                   show it and hs_insert() knows where the entry goes. */
+                g_name_rank = hs_rank_for(g_score);
+                if (g_name_rank != 0xFFu) {
+                    name_entry_start();
+                    g_state = STATE_NAME;
+                } else {
+                    intro_draw_at("GAME OVER", 8u);
+                    /* Same lock as after the name entry: the player was
+                       almost certainly holding fire at the moment of death,
+                       and without it the game over screen is gone in the
+                       same breath. */
+                    g_over_lock = (u8)OVER_LOCK_FRAMES;
+                    g_state = STATE_OVER;
+                }
             }
             }   /* end of the pause gate (WORM_TEST_MODE) */
+        } else if (g_state == STATE_NAME) {
+            if (name_entry_tick()) {
+                u8 nm[4];
+                name_entry_chars(nm);
+                hs_insert(g_name_rank, g_score, nm);
+                /* Tell the player what is happening BEFORE the flash call:
+                   the erase alone takes on the order of a second on real
+                   hardware, with interrupts masked throughout, so the machine
+                   simply stops. Without this line that reads as a crash. */
+                hs_puts(5u, 16u, "               ");
+                hs_puts(5u, 17u, "               ");
+                hs_puts(6u, 16u, "SAVING");
+                wait_vblank();
+                {
+                    u8 ok = save_store();
+                    ClearScreen(SCR_1_PLANE);
+                    ClearScreen(SCR_2_PLANE);
+                    hs_draw();
+                    /* Say so when it did NOT work. A player whose cartridge
+                       cannot save has to be able to tell that from a game
+                       that forgot on purpose. g_save_status: 1 = no card,
+                       2 = erase refused, 3 = write refused, 4 = the bytes did
+                       not read back. */
+                    if (!ok) {
+                        hs_puts(2u, 17u, "SAVE FAILED");
+                        hs_putc(14u, 17u, (u8)(48u + g_save_status));
+                    }
+                }
+                /* Lock the page briefly. The player has just been pressing A
+                   to enter the name, and STATE_OVER restarts the game on the
+                   very next A - so the highscore table they just earned a
+                   place in flashed past unread (user report). */
+                g_over_lock = (u8)OVER_LOCK_FRAMES;
+                g_state = STATE_OVER;
+            }
         } else if (g_state == STATE_OVER) {
-            if (g_pad_pressed & J_A) {
+            if (g_over_lock) g_over_lock--;
+            else if (g_pad_pressed & J_A) {
                 SeedRandom();
                 game_start();
             }
@@ -13028,6 +13862,13 @@ void main(void) {
                    stationary shop picture. */
                 g_split_active = 0u;
                 HW_DMA0V = 0u; HW_DMA1V = 0u;
+                /* Black screen with text before the shop. NOT in the
+                   original - there the doors open and there is no text (see
+                   the note at transition_run) - but the door animation is to
+                   come later, and this covers shop_enter()'s complete
+                   rebuild of character RAM. No wait for fire: it is a
+                   loading cover, not a prompt. */
+                transition_run("ENTERING THE SHOP", 0u, 0u);
                 shop_enter();
                 g_shop_entered = 1u;
             }
@@ -13046,7 +13887,16 @@ void main(void) {
                 g_shop_entered = 0u;
                 g_shop_a_count = 0u;
                 shop_oam_clear();   /* switch off the shop sprites BEFORE the game continues */
+                /* Same again on the way out, and with the wait: shop_resume()
+                   re-uploads the whole sprite set, the palettes, the bar
+                   tiles and the terrain. Behind the screen none of that is
+                   visible, and the player decides when play resumes. */
+                transition_run("GET READY PLAYER 1", 1u, 1u);
                 shop_resume();
+                oam_reset_all();
+                spr_tiles_upload();
+                spr_pal_load();
+                g_score_last_shown = 0xFFFFu;
             }
         }
 #if TELEMETRY

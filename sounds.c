@@ -88,8 +88,8 @@ typedef struct {
     u8 noise_config; /* 0-7 (rate=bits0-1, type=bit2) */
     u8 macro_id;
     u8 adsr_on;       /* 0=legacy env, 1=ADSR active */
-    u8 adsr_attack;   /* frames per step 15â†’attn (0=instant) */
-    u8 adsr_decay;    /* frames per step attnâ†’sustain (0=instant) */
+    u8 adsr_attack;   /* frames per step 15->attn (0=instant) */
+    u8 adsr_decay;    /* frames per step attn->sustain (0=instant) */
     u8 adsr_sustain;  /* sustain attn level 0-15 */
     u8 adsr_release;  /* frames per step cur->15 (0=instant) */
     u8 adsr_sustain_rate; /* frames per step sustain->silent (0=hold) */
@@ -1289,7 +1289,7 @@ static u8 BgmVoice_UpdateFx(BgmVoice *v)
     /* --- ADSR state machine (replaces legacy env when active) --- */
     if (v->adsr_on && v->adsr_phase > 0) {
         switch (v->adsr_phase) {
-        case 1: /* ATK: ramp 15 â†’ attn (louder) */
+        case 1: /* ATK: ramp 15 -> attn (louder) */
             if (v->adsr_attack == 0) {
                 v->attn_cur = v->attn;
                 v->adsr_phase = 2;
@@ -1311,7 +1311,7 @@ static u8 BgmVoice_UpdateFx(BgmVoice *v)
                 v->adsr_counter--;
             }
             break;
-        case 2: /* DEC: ramp attn â†’ sustain (quieter) */
+        case 2: /* DEC: ramp attn -> sustain (quieter) */
         {
             u8 sus_target = v->adsr_sustain;
             if (sus_target < v->attn) sus_target = v->attn;
@@ -1355,7 +1355,7 @@ static u8 BgmVoice_UpdateFx(BgmVoice *v)
                 }
             }
             break;
-        case 4: /* REL: ramp cur â†’ 15 (silent) */
+        case 4: /* REL: ramp cur -> 15 (silent) */
             if (v->adsr_release == 0) {
                 v->attn_cur = 15;
                 v->adsr_phase = 0;
@@ -2674,7 +2674,7 @@ void Bgm_Update(void)
                     s_bgm_fade_attn++;
                 }
                 if (s_bgm_fade_attn >= 15) {
-                    /* Fade complete â€” stop BGM */
+                    /* Fade complete - stop BGM */
                     Bgm_Stop();
                     return;
                 }

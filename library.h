@@ -174,6 +174,10 @@ void InstallTileSetAt(const unsigned short Tiles[][8], u16 Len, u16 Offset);
 
 void ClearScreen(u8 ScrollPlane);
 void SysSetSystemFont(void);
+/* Defined in library.c but never declared here, so every caller in xenon.c
+   ran without a prototype and C89 assumed a return type of int
+   (visible with -w3 as THC1-Warning-521). */
+void SysShutdown(void);
 
 void SetBackgroundColour(u16 Col);
 void SetWindowColor(u16 Col);
@@ -252,6 +256,18 @@ void SetScreen(u8 lx, u8 ly, u8 mx, u8 my);
 void Flash(void *data);
 void GetSavedData(void *data);
 
+/* Flash save with a caller-supplied geometry - see the long comment in
+   library.c. Set the six globals, call FlashSaveRun(), then check the two
+   result bytes (0 = SYS_SUCCESS) AND read the data back: a BIOS that reports
+   success is not the same thing as bytes that arrived. */
+extern u8  FlashSaveBlock;
+extern u32 FlashSaveOffset;
+extern u32 FlashSaveSrc;
+extern u16 FlashSaveUnits;
+extern u8  FlashEraseResult;
+extern u8  FlashWriteResult;
+void FlashSaveRun(void);
+
 void ShiftScroll(u8 Plane, u8 hz, u8 vt);
 
 u8 SwapPlanes(void);
@@ -267,7 +283,6 @@ u8 SwapPlanes(void);
 #define SPR_BFLIP	(u8)(3<<6)
 
 void SpriteControl(u8 SpriteNo, u8 Priority, u8 Flips);
-void UnsetSprite(u8 Spriteno);
 
 #endif
 
