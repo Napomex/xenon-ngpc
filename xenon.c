@@ -9,16 +9,65 @@
 #include "PNG/Logo/logo_tiles.h"   /* title screen logo, generated from PNG/RAW/Logo.png by a Node script */
 #include "Musik/Titel.c"           /* Provides the default NOTE_TABLE symbol that sounds.rel needs at link time */
 #include "sounds.h"                 /* NGPCraft T6W28 sound driver (sounds.c) */
-#include "Musik/game_theme.c"      /* THEME_*: the XG-Steel arrangement of the Xenon 2 theme, mixed down to 4 voices. No NOTE_TABLE default here (ifdef off) so it cannot clash with Titel.c. */
+#include "sfx_orig.h"               /* effects derived from the DOS original, see below */
+/* SOUND EFFECTS FROM THE DOS ORIGINAL.
+   Xenon 2 on the PC has no sampler: it drives the PC SPEAKER through David
+   Whittaker's driver (docs/formats/mods-vga.md - "no FM, no DAC, no PSG ...
+   square wave"). That is the same kind of sound source as our T6W28, so the
+   effects transfer instead of having to be invented: the pitch is just a
+   different divider.
+       PC speaker  f = 1193182 / d
+       T6W28       f = 3072000 / (32*n) = 96000 / n     ->  n = d * 0.080457
+   Which effect belongs to which event was not guessed either: the game writes
+   the pending effect number to [0x8e88]/[0x8e8a] and the timer ISR plays it,
+   so searching the EXE for "C7 06 88 8E <imm16>" yields every trigger site,
+   and docs/formats/ names the functions they sit in. tools/dos_sfx_dump.py
+   prints that table, tools/dos_sfx_convert.py generates sfx_orig.h. */
+static void sfx(u8 id) { sfx_orig_play(id); }
 
-/* Music: the title theme, used in the menu and in game.
-   music_start_theme() always restarts it from the beginning. The
-   THEME_*_LOOP offsets all sit on the same song frame, so the four voices
-   stay in sync across the loop. */
+/* Music master attenuation, 0 = nominal, 15 = silent, 2 dB per step. The sound
+   effects do NOT pass through it, so this is the balance knob between music
+   and effects.
+
+   2 = 4 dB down. Reached in two steps, both measured: the shot sat 11.3 dB
+   below the arrangement and was inaudible in play, and nine of the twelve
+   effects sat up to 11.4 dB below the loudest three (tools/probe_sfx_pegel.py).
+   The effects were levelled first (all at attn 1, spread now 4.1 dB), then this
+   value was CONFIRMED BY EAR on the mixing ROM - sndmix.ngp lets you dial the
+   music live and reads out the number to put here. */
+#define MUSIC_ATTN 2u
+/* X_THEME / X_JINGLE: Megablast, converted straight from the PC-speaker driver
+   in XENON2.EXE (tools/music/convert_xenon_music.js) - the ORIGINAL, not an
+   arrangement. Picked over the XG MIDI arrangement in Musik/game_theme.c after
+   comparing both on the mixing ROM (sndmix.ngp, OPTION switches the source).
+   No NOTE_TABLE default here (ifdef off) so it cannot clash with Titel.c.
+
+   X_JINGLE comes with it and is currently unused - the original plays it in
+   the shop flow (INT 80h AH=2 AL=1 at 1000:4c74, see docs/formats/shop.md). */
+#include "Musik/xenon_songs.c"
+
+/* Music: the Megablast theme, used in the menu and in game.
+   music_start_theme() always restarts it from the beginning.
+
+   Loop offset 0 on all four voices - X_THEME has no separate loop points, so
+   it repeats from the top and the voices cannot drift apart. (The XG
+   arrangement carried THEME_*_LOOP offsets that all sat on the same song
+   frame for exactly that reason.) */
 static void music_start_theme(void) {
-    Bgm_SetNoteTable(THEME_NOTE_TABLE);
-    Bgm_StartLoop4Ex(THEME_CH0, THEME_CH0_LOOP, THEME_CH1, THEME_CH1_LOOP,
-                     THEME_CH2, THEME_CH2_LOOP, THEME_CHN, THEME_CHN_LOOP);
+    Bgm_SetNoteTable(X_THEME_NOTE_TABLE);
+    Bgm_StartLoop4Ex(X_THEME_CH0, 0, X_THEME_CH1, 0,
+                     X_THEME_CH2, 0, X_THEME_CHN, 0);
+    /* Music 4 dB below its own nominal level so the effects carry. Measured:
+       the shot sat 11 dB under the arrangement and was inaudible in play.
+       Lowering the music is the right lever, not raising the shot - it is
+       already at attn 1 of 15, and its envelope fades it by another 8 dB
+       while it plays, so there is almost no headroom left there.
+
+       !! SET HERE, NOT ONCE IN main(). MUSIC_ATTN is a static without an
+       initialiser inside the driver, and hardware does not clear RAM (see
+       the g_hs_shown incident). Setting it on every tune start makes the
+       value independent of whatever was in RAM at power-on. */
+    Bgm_SetMasterAttn(MUSIC_ATTN);
 }
 
 /* ========================================================================
@@ -300,7 +349,7 @@ static s16 fps_spd_s(s16 v) {
 #define BACK_PX_MAX 16u
 
 // --- Tile slots --
-#define TILE_BAR_BASE  148   /* 14 bar tiles at 148-161 */
+#define TILE_BAR_BASE  148   /* 18 bar tiles at 148-165 (14 before the HUD came from the tool) */
 /* Level 1 terrain VRAM base; LVL_TILE_DATA_COUNT comes from the map export */
 #define LVL1_VRAM_BASE 254u
 
@@ -326,7 +375,7 @@ static s16 fps_spd_s(s16 v) {
    spr_tile_vram_init() for which physical VRAM ranges are actually free -
    two obvious-looking ranges belong to the HUD bar system and picking them
    breaks the life bar. */
-#define SPR_TILE_COUNT 341u   
+#define SPR_TILE_COUNT 361u   
 #define SPR_S_THRUST_HEAD 155u  /* Head of the 2-frame thruster animation. Forward thrust reuses the same graphic via SPR_VFLIP. */
 #define SPR_S_DIGIT0   37u   /* 37-46: digits 0-9 */
 #define SPR_S_ENEMY0   47u   /* 47-54: 8 animation frames of the enemy (head 47, currently unused) */
@@ -443,6 +492,8 @@ static const u8 lvl_tile_remap_A[LVL_TILE_DATA_COUNT] = {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0,
 };
 
@@ -510,8 +561,11 @@ static const u8 lvl_tile_remap_B[LVL_TILE_DATA_COUNT] = {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0,
 };
+
 
 
 
@@ -818,6 +872,7 @@ static const u8 lvl1_terr_remap[LVL1_TERR_SEC_COUNT][LVL_TILE_DATA_COUNT] = {
     0, 0,
   },
 };
+
 
 
 
@@ -1253,36 +1308,51 @@ static void oam_scrub_step(void) {
    pal2  (idx1=color5, idx2=color6, idx3=color7)    9:   life       pal3 */
 /* Bar tiles 0-9 use palette 1 (cool). Tiles 10-13 use palette 4 (salmon
    plus cool tones), with the salmon pixels baked in. */
-static const unsigned short gfxBar[14][8] = {
-    { 0x0000, 0x5555, 0xFFFE, 0xFFFA, 0xFFE8, 0xFFA0, 0xFE80, 0xAA00 }, /* 0  left diagonal (col 1) */
-    { 0x0000, 0x0021, 0x009E, 0x027E, 0x09FE, 0x27FE, 0x9FFF, 0x6AAA }, /* 1  right diagonal */
-    { 0x0000, 0x5555, 0xAAAA, 0x0000, 0x0000, 0x0000, 0x5555, 0xAAAA }, /* 2  cool middle */
-    { 0x0000, 0x5557, 0xFFFE, 0x7FFE, 0x7FFE, 0x7FFE, 0x3FFE, 0xAAAA }, /* 3  cool r-trans */
-    { 0x0000, 0x1555, 0x7FFF, 0x7FFF, 0x7FFF, 0x7FFF, 0x7FFF, 0xEAAA }, /* 4  cool right cap */
-    { 0x0000, 0x5554, 0xFFFD, 0xFFFD, 0xFFFD, 0xFFFD, 0xFFFD, 0xAAAB }, /* 5  cool h-flip */
-    { 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000 }, /* 6  blank */
-    { 0x0000, 0x5555, 0x6AA0, 0x6AAA, 0x6AA0, 0x6AAA, 0x6AA0, 0xBFFF }, /* 7  warm left */
-    { 0x0000, 0x5556, 0x0AAB, 0x0AAB, 0x0AAB, 0x0AAB, 0x0AAB, 0xFFFF }, /* 8  warm right */
-    { 0x0000, 0x5555, 0xAAAA, 0xFFFF, 0xFFFF, 0xFFFF, 0x5555, 0xAAAA }, /* 9  life */
-    /* Combined tiles (pal4): salmon at y1,x0 in the right cap (cols 0+18) */
-    { 0x0000, 0x7FFF, 0xEAAA, 0xEAAA, 0xEAAA, 0xEAAA, 0xEAAA, 0xAAAA }, /* 10 right cap + salmon */
-    /* salmon at y1,x6 in the right diagonal (col 9) */
-    { 0x0000, 0x0027, 0x00BA, 0x02EA, 0x0BAA, 0x2EAA, 0xBAAA, 0xEAAA }, /* 11 right diagonal + salmon */
-    /* salmon at y6,x0 in r-trans (col 15) */
-    { 0x0000, 0xFFFE, 0xAAAA, 0xEAAA, 0xEAAA, 0xEAAA, 0x6AAA, 0xAAAA }, /* 12 r-trans + salmon */
-    /* salmon at y1,x7 in h-flip (col 19) */
-    { 0x0000, 0xFFFD, 0xAAAB, 0xAAAB, 0xAAAB, 0xAAAB, 0xAAAB, 0xAAAA }  /* 13 h-flip + salmon */
+static const unsigned short gfxBar[19][8] = {
+    { 0x0000, 0x7FFF, 0xEAAA, 0xEAAA, 0xEAAA, 0xEAAA, 0xEAAA, 0xAAAA }, /*  0 Leiste Spalte 0 */
+    { 0x0000, 0x5555, 0xFFFE, 0xFFFA, 0xFFE8, 0xFFA0, 0xFE80, 0xAA00 }, /*  1 Leiste Spalte 1 */
+    { 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000 }, /*  2 Leiste Spalte 2 */
+    { 0x0000, 0x0027, 0x00BA, 0x02EA, 0x0BAA, 0x2EAA, 0xBAAA, 0xEAAA }, /*  3 Leiste Spalte 9 */
+    { 0x0000, 0x5555, 0xAAAA, 0xFFFF, 0xFFFF, 0xFFFF, 0x5555, 0xAAAA }, /*  4 Leiste Spalte 10 */
+    { 0x0000, 0xFFFD, 0xAAAB, 0xEAAB, 0xEAAB, 0xEAAB, 0x6AAB, 0xAAAA }, /*  5 Leiste Spalte 15 */
+    { 0x0000, 0x5555, 0x6AAA, 0x6AAA, 0x6AAA, 0x6AAA, 0x6AAA, 0xBFFF }, /*  6 Leiste Spalte 16 */
+    { 0x0000, 0x5556, 0xAAAB, 0xAAAB, 0xAAAB, 0xAAAB, 0xAAAB, 0xFFFF }, /*  7 Leiste Spalte 18 */
+    { 0x0000, 0x5555, 0xA00A, 0xA08A, 0xA08A, 0xA08A, 0xA00A, 0xFFFF }, /*  8 Ziffer 0 */
+    { 0x0000, 0x5555, 0xA02A, 0xA82A, 0xA82A, 0xA82A, 0xA00A, 0xFFFF }, /*  9 Ziffer 1 */
+    { 0x0000, 0x5555, 0xA00A, 0xAA0A, 0xA00A, 0xA0AA, 0xA00A, 0xFFFF }, /* 10 Ziffer 2 */
+    { 0x0000, 0x5555, 0xA00A, 0xAA0A, 0xA00A, 0xAA0A, 0xA00A, 0xFFFF }, /* 11 Ziffer 3 */
+    { 0x0000, 0x5555, 0xA0AA, 0xA0AA, 0xA08A, 0xA00A, 0xAA8A, 0xFFFF }, /* 12 Ziffer 4 */
+    { 0x0000, 0x5555, 0xA00A, 0xA0AA, 0xA00A, 0xAA0A, 0xA00A, 0xFFFF }, /* 13 Ziffer 5 */
+    { 0x0000, 0x5555, 0xA00A, 0xA0AA, 0xA00A, 0xA08A, 0xA00A, 0xFFFF }, /* 14 Ziffer 6 */
+    { 0x0000, 0x5555, 0xA00A, 0xAA0A, 0xAA0A, 0xA82A, 0xA82A, 0xFFFF }, /* 15 Ziffer 7 */
+    { 0x0000, 0x5555, 0xA00A, 0xA08A, 0xA00A, 0xA08A, 0xA00A, 0xFFFF }, /* 16 Ziffer 8 */
+    { 0x0000, 0x5555, 0xA00A, 0xA20A, 0xA00A, 0xAA0A, 0xA00A, 0xFFFF }, /* 17 Ziffer 9 */
+    { 0x0000, 0x5555, 0xAAAA, 0xAAAA, 0xAAAA, 0xAAAA, 0x5555, 0xAAAA }  /* 18 Balken leer (abgeleitet) */
 };
 
 /* SCR_1 palette per tile design */
-static const unsigned char barPal[14] = { 1,1,1,1,1,1,1,2,2,3, 4,4,4,4 };
+static const unsigned char barPal[19] = { 4,1,1,4,3,4,2,2,2,2,2,2,2,2,2,2,2,2,3 };
 /* 0:cap+S  1:left-diag  2-8:digit  9:diag+S  10-14:life  15:rtrans+S
    16-19:warm+caps+S */
 /* Column 19 used to be design 13 ("h-flip + salmon"), which is design 10
    mirrored row by row - so design 10 plus a flip in put_cell() is used
    directly instead (see bar_draw_at/bar_shift_update: column 19 always
    gets flip=1). */
-static const unsigned char barMapDef[20] = { 10,0,6,6,6,6,6,6,6,11,9,9,9,9,9,12,7,8,10,10 };
+static const unsigned char barMapDef[20] = { 0,1,2,2,2,2,2,2,2,3,4,4,4,4,4,5,6,2,7,0 };
+/* Per-column mirroring. Replaces the (tx == 19u) that used to be hardwired
+   in bar_draw_at() - which column gets mirrored is now the tool's
+   decision, not the code's. */
+static const unsigned char barFlipDef[20] = { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1 };
+/* Lives display: a single digit, as in the original (docs/formats/hud.md,
+   "lives, 1 digit" at x=136,y=193, capped at 9). The bar next to it is the
+   ENERGY, not the lives - that is easily confused. The column is the first
+   EMPTY one to the right of the energy bar; it already moved from 16 to 17
+   once between two versions of the image, which is why it comes from the
+   tool instead of sitting fixed in the code. */
+#define BAR_LIVES_COL  17u
+#define BAR_DIGIT_BASE 8u
+#define BAR_LIVES_MAX  9u
+
 /* dynamic column map (initialised in game_start, updated on losing a life) */
 static unsigned char g_bar_col[20];
 
@@ -1473,6 +1543,7 @@ typedef struct {
        position and the remaining cells hold constant deltas. */
     u8  chain_base;
     u8  chain_cells;            /* number of cells the block was allocated for */
+    u8  chain_nb;               /* b slots in the block, see spr_draw_cell_a/b */
     u16 c_cached_idx;           /* meta_idx the cache is valid for (0xFFFF = empty) */
     u8  c_cnt;                  /* lvl_meta_count */
     u8  c_dx[META_CELLS], c_dy[META_CELLS];
@@ -1958,6 +2029,11 @@ static u16     g_row_map[32];
    front). User report 31.07.: without the weapons the display shows 090,
    with them 095-097. Measured they cost +27.9 % per frame. */
 #define BENCH_LOADOUT 0
+/* ===== START_WEAPONS: bitmask over lvl_weapon_*, the weapons the ship
+   carries right away - for trying out a weapon without going through the
+   shop. Bit 3 = laser. 0 = off (shipping state). ===== */
+#define START_WEAPONS (1u << 3)   /* Laser */
+
 /* ===== PAL_SELFCHECK: 1 = compare the sprite palettes against their
    source every frame (spr_pal_check). The number of deviations can be
    brought into the HUD via PAL_SHOW_IN_SCORE. Costs 48 word comparisons
@@ -2107,7 +2183,14 @@ static u16     g_row_map[32];
    and additionally carries the "invisible shots after reload" class of bug
    (alloc/free churn). DO NOT try again; kept only as a documented
    measurement switch. */
-#define TEST_FLICKER_ALLBULLETS 0
+/* Flicker multiplexing for ALL player shots: every shot is drawn on every
+   second game frame only, two of them share one OAM slot. TURNED ON BY
+   REQUEST (03.08.2026). The earlier measurements argue against it and
+   stand unchanged below: on hardware the base load was 95-107 against 105
+   with flicker, so NO gain, and the constant slot churn produced invisible
+   shots after a reload. At 20 fps it also flickers at 10 Hz instead of 15.
+   Back to 0 if those symptoms return. */
+#define TEST_FLICKER_ALLBULLETS 1
 /* Block 4 (check_collisions + wallworms_collide + wcrawls_collide) only
    every SECOND frame. ON BY DEFAULT - together with the sweep test
    (BULLET_SWEEP extends the shot box downwards by the two-frame path, and
@@ -2502,7 +2585,7 @@ static void build_lvl1(u16 start_idx) {
    terrain.    RECOMPUTE COMPLETELY from map.h on every update rather than
    adding to it:    shifted raw indices of existing S numbers show up ONLY
    as a wrongly drawn    sprite, NEVER as a compiler error. */
-#define SPR_RAW_REMAP_SIZE 520u   /* max(spr_raw_used) - SPR_ROM_BASE + 1 */
+#define SPR_RAW_REMAP_SIZE 546u   /* max(spr_raw_used) - SPR_ROM_BASE + 1 */
 static const u16 spr_raw_used[SPR_TILE_COUNT] = {
     345, 346, 347, 348, 349, 350, 351, 352, 353, 354, 355, 356,
     357, 358, 359, 360, 361, 362, 363, 364, 365, 366, 367, 368,
@@ -2532,7 +2615,9 @@ static const u16 spr_raw_used[SPR_TILE_COUNT] = {
     695, 696, 697, 698, 699, 700, 703, 704, 705, 706, 707, 708,
     709, 710, 711, 712, 713, 714, 715, 716, 717, 718, 719, 720,
     721, 722, 723, 724, 725, 726, 727, 728, 729, 730, 731, 732,
-    733, 734, 735, 736, 737,
+    733, 734, 735, 736, 737, 738, 739, 740, 741, 742, 743, 744,
+    745, 746, 747, 748, 749, 750, 751, 752, 753, 760, 761, 762,
+    763,
 };
 
 static const u16 spr_raw_remap[SPR_RAW_REMAP_SIZE] = {
@@ -2568,8 +2653,11 @@ static const u16 spr_raw_remap[SPR_RAW_REMAP_SIZE] = {
     289, 290, 291, 292, 293, 0, 0, 294, 295, 296, 297, 298, 299, 300, 301, 302,
     303, 304, 305, 0, 0, 306, 307, 308, 309, 310, 311, 312, 313, 314, 315, 316,
     317, 318, 319, 320, 321, 322, 323, 324, 325, 326, 327, 328, 329, 330, 331, 332,
-    333, 334, 335, 336, 337, 338, 339, 340,
+    333, 334, 335, 336, 337, 338, 339, 340, 341, 342, 343, 344, 345, 346, 347, 348,
+    349, 350, 351, 352, 353, 354, 355, 356, 0, 0, 0, 0, 0, 0, 357, 358,
+    359, 360,
 };
+
 
 
 
@@ -2648,7 +2736,12 @@ static void spr_tile_vram_init(void) {
        are free for the sprite pool. Order does not matter, since the
        mapping is purely positional. */
     for (t = 355u; t <= 453u && i < SPR_SEC_ZONE; t++) g_spr_tile_vram[i++] = t;
-    for (t = 162u; t <= 176u && i < SPR_SEC_ZONE; t++) g_spr_tile_vram[i++] = t;
+    /* !! 162..166 BELONG TO THE BAR SINCE THE TOOL HUD. gfxBar has grown
+       from 14 to 19 tiles (bar + digits + empty bar cell), so
+       TILE_BAR_BASE 148 now reaches up to 166. The range therefore starts
+       at 167 - without that the pool would overwrite the HUD tiles as soon
+       as SPR_SEC_ZONE is raised far enough to reach them. */
+    for (t = 167u; t <= 176u && i < SPR_SEC_ZONE; t++) g_spr_tile_vram[i++] = t;
     for (t = 243u; t <= 252u && i < SPR_SEC_ZONE; t++) g_spr_tile_vram[i++] = t;
     for (t = 135u; t <= 136u && i < SPR_SEC_ZONE; t++) g_spr_tile_vram[i++] = t;
     /* 21.07.2026: terrain zone shrunk (only ~134 needed instead of 171).
@@ -2868,7 +2961,12 @@ static void neg_flush(void) {
     g_neg_want = g_neg_on;
     g_neg_on   = 0u;
 }
-#define FLASH_PAL 15u   /* white sprite hit flash, written by spr_pal_load() */
+/* Hit-flash palette. WAS 15 - but the tool now assigns palette 15 to a real
+   sprite (282), and slot 15 was quietly overwritten with white here, so that
+   sprite showed wrong colours. Palette 1 is used instead: it already carries
+   the bright/light-grey tones the flash needs, so it is taken AS EXPORTED and
+   no longer overwritten - one palette slot back for the artwork. */
+#define FLASH_PAL 1u
 
 static void spr_pal_load(void) {
     u8 i;
@@ -2892,10 +2990,10 @@ static void spr_pal_load(void) {
        through its tilemap palette instead (see boss_body_flash()). NOTHING
        uses NEG any more; neg_flush() and the register write stay, but only
        to guarantee the bit is off. */
-    spal[(u16)FLASH_PAL * 4u + 0u] = 0x0000u;
-    spal[(u16)FLASH_PAL * 4u + 1u] = 0x0FFFu;
-    spal[(u16)FLASH_PAL * 4u + 2u] = 0x0FFFu;
-    spal[(u16)FLASH_PAL * 4u + 3u] = 0x0FFFu;
+    /* !! DO NOT OVERWRITE THIS ANY MORE. Slot 15 used to be filled with
+       pure white here; since FLASH_PAL points at 1, that would destroy a
+       real sprite palette. Palette 1 comes out of the export exactly as it
+       was drawn (0x0DBD/0x0A77/0x026B - light to light grey). */
 }
 
 /* ============ Palette self-check ============    The green/yellow sprites
@@ -2983,10 +3081,175 @@ static void spr_draw_s_single(u8 oam, u16 s_num, u8 x, u8 y) {
    optionally v-flipped for the reverse animation the tool does not
    provide). 'flip' is the finished SPR_HFLIP/SPR_VFLIP mask, not a
    boolean. */
+/* ===== Beam weapons (head - stacked middle - tail) ===== From the Tile
+   Analyzer, tab "Beams". The model is the original's laser
+   (docs/formats/weapons.md): there the column is NO graphic at all but a
+   solid-colour area - on the NGPC it needs a tile, and in exchange it may
+   have three colours. !! THREE DIFFERENT RESOURCES that are easily
+   confused: VRAM tiles - only the ACTIVE stage has to be loaded. OAM
+   entries - every stacked segment is one of them, and that is the
+   bottleneck. Write accesses - chaining turns them into ONE per frame. A
+   taller middle piece lowers the OAM count without costing tiles: at 8 px
+   it takes 13 segments, at 24 px only 5. */
+/* !! THE TABLES COME FROM map.h AS SOON AS THE TOOL EXPORTS THEM. Until
+   then the fallback below with the hand-entered values applies. The define
+   LVL_BEAM_COUNT is the marker - LVL_WEAPON_MUZZLE does exactly the same
+   for the muzzle offset. After the next export the "Beams" tab takes over
+   by itself and the fallback can go. */
+#if defined(LVL_BEAM_COUNT) && (LVL_BEAM_COUNT > 0)
+#define BEAM_COUNT  ((u8)LVL_BEAM_COUNT)
+#define BEAM_STAGES ((u8)LVL_BEAM_STAGES)
+#define beam_head_spr  lvl_beam_head_spr
+#define beam_mid_spr   lvl_beam_mid_spr
+#define beam_tail_flip lvl_beam_tail_flip
+#define beam_mid_h     lvl_beam_mid_h
+#define beam_len       lvl_beam_len
+#define beam_weapon    lvl_beam_weapon
+#else
+#define BEAM_COUNT  1u
+#define BEAM_STAGES 3u
+static const u16 beam_head_spr[BEAM_COUNT][BEAM_STAGES] = { { 287u, 286u, 285u } };
+static const u16 beam_mid_spr[BEAM_COUNT][BEAM_STAGES]  = { { 290u, 289u, 288u } };
+/* 1 = the tail is the vertically mirrored head and saves a sprite. In the
+   original this holds for all three stages (verified pixel by pixel,
+   tools/dos_laser_art.py). */
+static const u8  beam_tail_flip[BEAM_COUNT][BEAM_STAGES] = { { 1u, 1u, 1u } };
+static const u8  beam_mid_h[BEAM_COUNT][BEAM_STAGES]     = { { 8u, 8u, 8u } };
+/* Beam length per stage, in pixels. FROM THE ORIGINAL, HALVED. weapons.md
+   on the drawing routine 0f29:1478: the column is drawn "UPWARD from row
+   rawY for +0x1a rows", with 0x20/0x40 while attached and 0x41 once
+   detached - so 32/64/65 px at DOS resolution. The NGPC is half that size
+   (docs: halve the px), which makes 16/32/33. !! THAT IS NOT JUST
+   COSMETICS, IT IS THE OAM BOTTLENECK. Up to the screen edge it would be
+   about 100 px = 13 stacked segments + head + tail = 15 slots, with 7 free
+   on average. At the original length it is 2 or 4 segments, so 4-6 slots -
+   it fits without flicker and without a taller middle graphic. */
+/* Stage 2 at 32 instead of 33: 33 px are 4 full segments PLUS 1 px left
+   over, and that remainder costs a whole further sprite - 7 OAM slots
+   instead of 6. The single pixel is the conversion 65/2 from the original
+   (weapons.md: 0x41 in the detached state). Rounded onto a multiple of the
+   segment height. */
+static const u8  beam_len[BEAM_COUNT][BEAM_STAGES] = { { 16u, 32u, 32u } };
+static const u8  beam_weapon[BEAM_COUNT] = { 3u };
+#endif
+
+/* The beam reaches from the muzzle to the top edge of the playfield. */
+#define BEAM_TOP_Y   8u
+#define BEAM_MAX_SEG 14u          /* Kopf + Mitte + Ende, Obergrenze */
+
+/* !! THE LASER IS A PROJECTILE, NOT AN ATTACHED BEAM. The first version
+   drew it fixed upward from the muzzle - it then stuck to the ship and
+   never went away (user report: "when I move away from the shot the shot
+   stays put"). The original does it the same way: the beam detaches
+   (weapons.md, "if detached +0x1a >= 0x41") and keeps climbing. So it
+   behaves like a normal shot, except that when drawn it consists of head,
+   stacked middle and tail. */
+static struct {
+    u8 oam;      /* erster Slot des Kettenblocks, OAM_NONE = keiner */
+    u8 cnt;      /* how many slots the block has */
+    u8 on;       /* fliegt gerade einer? */
+    u8 x, y;     /* Position des UNTEREN Endes */
+    u8 stage;    /* stage, decides length and graphics */
+} g_beam;
+
+/* Flugtempo wie ein Spielerschuss: BULLET_SPEED px je Spielframe. */
+#define BEAM_SPEED FPS_SPD(8u)
+
 static void spr_draw_s_single_flip(u8 oam, u16 s_num, u8 x, u8 y, u8 flip) {
     u16 n = (u16)(s_num - 1u);
     SetSprite(oam, spr_vram(lvl_sspr_a_idx[n]), 0, x, y, lvl_sspr_a_pal[n]);
     SpriteControl(oam, SPR_FRONT, flip);
+}
+
+/* ============ Draw the beam weapon ============ Head at the top, the
+   stacked middle below it, the (usually mirrored) tail at the bottom. The
+   block is allocated as ONE piece, because a K2GE chain always refers to
+   the PREVIOUS entry: if a foreign slot lies in between, the chain breaks.
+   Hence oam_pool_alloc_run(). Drawing goes from the bottom up so that the
+   first link sits at the muzzle - that is where the absolute position
+   lives, all the others carry only the delta (0, -mid_h). Moving the whole
+   beam therefore costs ONE write access instead of one per segment. */
+static void beam_draw(u8 bi, u8 stage, u8 gun_x, u8 gun_y) {
+    /* gun_x/gun_y are the position of the LOWER end - for the flying laser
+       that is g_beam.x/y, not the muzzle. */
+    u8 mh, seg, i, y, first;
+    u16 mid, head;
+    if (bi >= (u8)BEAM_COUNT || stage >= (u8)BEAM_STAGES) return;
+    mh   = beam_mid_h[bi][stage];
+    if (mh < 4u) mh = 8u;
+    mid  = beam_mid_spr[bi][stage];
+    head = beam_head_spr[bi][stage];
+    if (mid == 0u || head == 0u) return;      /* not assigned in the tool yet */
+
+    /* Segments from the beam length, not up to the screen edge. At the top
+       edge it is clipped as well, so the head does not run into the status
+       bar or off the screen. */
+    { u8 laenge = beam_len[bi][stage];
+      u8 platz  = (u8)((gun_y > (u8)BEAM_TOP_Y) ? (gun_y - (u8)BEAM_TOP_Y) : 0u);
+      if (laenge > platz) laenge = platz;
+      seg = (u8)(laenge / mh); }
+    if (seg > (u8)(BEAM_MAX_SEG - 2u)) seg = (u8)(BEAM_MAX_SEG - 2u);
+
+    /* Request the block: tail + middles + head. If that fails, nothing is
+       drawn this frame - better no beam than a torn one made of individual
+       slots. */
+    if (g_beam.oam == OAM_NONE || g_beam.cnt != (u8)(seg + 2u)) {
+        if (g_beam.oam != OAM_NONE) {
+            for (i = 0u; i < g_beam.cnt; i++) UnsetSprite((u8)(g_beam.oam + i));
+            for (i = 0u; i < g_beam.cnt; i++) oam_pool_free((u8)(g_beam.oam + i));
+            g_beam.oam = OAM_NONE; g_beam.cnt = 0u;
+        }
+        first = oam_pool_alloc_run((u8)(seg + 2u));
+        if (first == OAM_NONE) return;
+        g_beam.oam = first; g_beam.cnt = (u8)(seg + 2u);
+    }
+
+    /* bottom: the tail, usually the mirrored head */
+    y = gun_y;
+    spr_draw_s_single_flip(g_beam.oam, head, gun_x, y,
+                           beam_tail_flip[bi][stage] ? (u8)SPR_VFLIP : 0u);
+    /* the middle pieces above it */
+    for (i = 0u; i < seg; i++) {
+        y = (u8)(y - mh);
+        spr_draw_s_single((u8)(g_beam.oam + 1u + i), mid, gun_x, y);
+    }
+    /* the head at the very top */
+    spr_draw_s_single((u8)(g_beam.oam + 1u + seg), head, gun_x, (u8)(y - mh));
+    g_beam.on = 1u;
+}
+
+/* Clear the beam away - on release, on death and at every state change.
+   WHOEVER LEAVES AN UPDATE EARLY MUST TELL THE DRAWING CODE THAT ITS DATA
+   IS STALE (see boss_draw/offscreen) - here the slots are handed straight
+   back, so nothing can be left standing. */
+/* !! FORWARD DECLARATION. beam_update() calls beam_hide(), which only
+   comes after it - without a visible prototype C89 assumes int as the
+   return type, and cc900 then computes on the full register (see -w3,
+   CLAUDE.md 6.10). */
+static void beam_hide(void);
+
+/* Fly on by one frame. Off the top of the screen -> hand the slots back.
+   That is the same life cycle as a shot, only with length. */
+static void beam_update(void) {
+    u8 laenge;
+    if (!g_beam.on) return;
+    laenge = beam_len[0][g_beam.stage];
+    if (g_beam.y <= (u8)(BEAM_TOP_Y + laenge)) {   /* head has left the top */
+        beam_hide();
+        return;
+    }
+    g_beam.y = (u8)(g_beam.y - (u8)BEAM_SPEED);
+    beam_draw(0u, g_beam.stage, g_beam.x, g_beam.y);
+}
+
+static void beam_hide(void) {
+    u8 i;
+    if (g_beam.oam == OAM_NONE) return;
+    for (i = 0u; i < g_beam.cnt; i++) {
+        UnsetSprite((u8)(g_beam.oam + i));
+        oam_pool_free((u8)(g_beam.oam + i));
+    }
+    g_beam.oam = OAM_NONE; g_beam.cnt = 0u; g_beam.on = 0u;
 }
 
 /* Use SetSpritePosition when only the position changes, rather than
@@ -3063,6 +3326,31 @@ static void spr_draw_chain_cell_f(u8 oam, u16 s_num, u8 ddx, u8 ddy, u8 chain_a,
 }
 static void spr_draw_chain_cell(u8 oam, u16 s_num, u8 ddx, u8 ddy, u8 chain_a) {
     spr_draw_chain_cell_f(oam, s_num, ddx, ddy, chain_a, 0u);
+}
+
+/* SPLIT CHAINS: the a planes of a metasprite in one run of slots, the b
+   overlays in a SECOND run behind them - instead of a/b alternating.
+   WHY: with a/b alternating, a cell without a b overlay still burns its
+   slot, because a K2GE chain always refers to the PREVIOUS entry and a
+   slot in the middle cannot be skipped. The old code therefore wrote that
+   slot as "chained but hidden". For the beetle (4 cells, 2 of them with b)
+   that is 8 slots where 6 do; with several on screen at once that is a
+   third of the pool for nothing.
+   The b run is CHAINED ON to the a run rather than anchored separately:
+   its first slot directly follows the last a slot, so it can carry the
+   chain bit and hold the delta from the last a cell. The whole metasprite
+   therefore stays ONE chain and moving it still costs a single position
+   write - the split is free. Metasprites whose cells ALL carry a b overlay
+   allocate cnt+nb = 2*cnt as before, so nothing changes for them. */
+static void spr_draw_cell_a(u8 oam, u16 s_num, u8 ddx, u8 ddy, u8 chain, u8 flip) {
+    u16 n = (u16)(s_num - 1u);
+    u8 ctl = (u8)(SPR_FRONT | (flip ? META_FLIP_MASK(flip) : 0u));
+    SetSpriteEx(oam, spr_vram(lvl_sspr_a_idx[n]), chain, ddx, ddy, lvl_sspr_a_pal[n], ctl);
+}
+static void spr_draw_cell_b(u8 oam, u16 s_num, u8 ddx, u8 ddy, u8 chain, u8 flip) {
+    u16 n = (u16)(s_num - 1u);
+    u8 ctl = (u8)(SPR_FRONT | (flip ? META_FLIP_MASK(flip) : 0u));
+    SetSpriteEx(oam, spr_vram(lvl_sspr_b_idx[n]), chain, ddx, ddy, lvl_sspr_b_pal[n], ctl);
 }
 static void ship_draw_meta(u8 meta, u8 x, u8 y) {
     u16 off = lvl_meta_off[meta];
@@ -3908,7 +4196,7 @@ static void bar_draw_at(u8 row) {
         /* column 19: design 10 mirrored (replaces the former separate
            design 13) */
         put_cell(SCROLL_PLANE_2, barPal[bi], tx, row,
-                 (u16)(TILE_BAR_BASE + bi), (tx == 19u) ? 0x8000u : 0u);
+                 (u16)(TILE_BAR_BASE + bi), barFlipDef[tx] ? 0x8000u : 0u);
         anim_grid_set(row, tx, 0u);  /* the bar is never animated - clear the leftover from the terrain prefill */
     }
     /* The bar row was (re)drawn, so invalidate the digit cache and let
@@ -3923,7 +4211,7 @@ static void build_bar_assets(void) {
     /* Palette 4: salmon plus cool colours for the combined bar/salmon
        tiles */
     SetPalette(SCR_2_PLANE, 4, 0x0000, 0x0ECE, 0x0644, 0x0A77);
-    InstallTileSetAt(gfxBar, (u16)(14*8), TILE_BAR_BASE);
+    InstallTileSetAt(gfxBar, (u16)(19*8), TILE_BAR_BASE);
 }
 
 /* ============ Bar subpixel shift ============    So the bar looks fixed
@@ -4101,12 +4389,49 @@ static u8 g_god;
 static u16 g_dbg_shots;   /* count of main gun shots fired (telemetry only) */
 static u16 g_dbg_area;    /* count of area damage hits (bomb/mine, telemetry only) */
 
+/* Energy display: five cells, 8 energy points each. !! THE DESIGN NUMBERS
+   ARE NO LONGER FIXED IN THE CODE. They used to be 9 (full) and 2 (empty)
+   - fixed numbers from the hand-written tile set. Since the HUD comes from
+   the tool, the same numbers mean something completely different: in the
+   current set 9 is the DIGIT 1, which is why the bar showed "11111" after
+   the first death. "Full" is therefore the design that barMapDef provides
+   for the bar columns anyway, "empty" the empty tile of the set. Both are
+   read from the tool data and move along by themselves when the tile set
+   changes. */
+#define BAR_ENERGY_COL0 10u              /* erste Balkenspalte */
+#define BAR_ENERGY_CELLS 5u
+#define BAR_ENERGY_FULL 4u
+
+/* The empty bar cell. NOT "the first completely empty tile" any more -
+   that was the black blank tile, and on energy loss the bar got a HOLE
+   instead of an empty frame (user report). Both numbers come from the tool
+   data. */
+#define BAR_ENERGY_EMPTY 18u
+
+
 static void bar_set_energy(void) {
     u8 c, lit;
-    for (c = 0u; c < 5u; c++) {
+    for (c = 0u; c < (u8)BAR_ENERGY_CELLS; c++) {
         lit = (u8)(g_player.energy > (u8)(c * 8u));
-        g_bar_col[(u8)(10u + c)] = (u8)(lit ? 9u : 2u);
+        g_bar_col[(u8)(BAR_ENERGY_COL0 + c)] =
+            (u8)(lit ? BAR_ENERGY_FULL : BAR_ENERGY_EMPTY);
     }
+    if (g_bar_redraw == 0u) g_bar_redraw = 1u;
+}
+
+/* Lives as a single digit, the way the original does it (docs/formats/hud.md:
+   "lives, 1 digit" at x=136,y=193, clamped to 9). The BAR next to it is the
+   ENERGY, not the lives - the two are easy to confuse because five cells look
+   like five lives.
+
+   Like bar_set_energy() this only writes the column table; the tilemap is
+   redrawn at the END of the frame. Writing the HUD row mid-frame is what
+   caused the old bar flicker, and on hardware the beam may already be reading
+   that row. */
+static void bar_set_lives(void) {
+    u8 n = g_player.lives;
+    if (n > (u8)BAR_LIVES_MAX) n = (u8)BAR_LIVES_MAX;
+    g_bar_col[(u8)BAR_LIVES_COL] = (u8)(BAR_DIGIT_BASE + n);
     if (g_bar_redraw == 0u) g_bar_redraw = 1u;
 }
 
@@ -4151,6 +4476,7 @@ static void player_damage(u8 dmg) {
     bar_set_energy();
     if (g_player.lives > 0) {
         g_player.lives--;
+        bar_set_lives();
         /* There used to be a direct bar_draw_at() here. That writes the
            HUD tilemap MID-FRAME - exactly what causes the old bar flicker;
            HUD writes belong at the end of the frame only. On real hardware
@@ -4490,7 +4816,15 @@ static void player_init(void) {
     g_player.x       = SCR_W / 2;
     g_player.y       = SCR_H - 36;
     g_player.fire_cd = 0;
+    /* !! g_beam.oam is a static without an initialiser - hardware does not
+       clear RAM, and a garbage value would be an OAM slot nobody owns. */
+    g_beam.oam = OAM_NONE; g_beam.cnt = 0u; g_beam.on = 0u;
     g_player.lives   = (u8)PLAYER_START_LIVES;
+    /* Pull the display along right away - otherwise the bar shows whatever
+       digit happened to be in RAM at power-on until the first death. The
+       bar designs are fixed constants now (BAR_ENERGY_FULL/EMPTY), there
+       is nothing left to search for. */
+    bar_set_lives();
     g_player.energy  = (u8)PLAYER_MAX_ENERGY;   
     g_player.inv_cd  = 0;
     g_player.firerate_stage = 0u;
@@ -4634,6 +4968,7 @@ static void player_update(void) {
         for (i = 0; i < MAX_BULLETS; i++) {
             if (!g_bullets[i].active) {
                 g_bullets[i].active = 1;
+                sfx(SFX_SHOT);         /* original effect 0x02, see sfx_orig.h */
                 g_busy_bullets = 1u;   /* early-out: flag set at the point of creation */
                 g_bullets[i].x      = (u8)(g_player.x + 8);
                 g_bullets[i].y      = g_player.y;
@@ -4708,9 +5043,33 @@ static void bullets_update(void) {
            and deactivates BEFORE setting, which is correct at any step
            size. */
         ny = (s16)((s16)g_bullets[i].y - (s16)step);
-        if (ny < 5) {
-            g_bullets[i].active = 0;
-        } else {
+        /* 0, NOT 5. The 5 was left over from the days when this was computed
+           unsigned and needed a cushion; the calculation has been signed for
+           a while, so the shot may travel all the way to the top row.
+           WHY IT MATTERED: the step is 24 px at 20 fps, and the sweep box
+           only extends DOWNWARDS (the path already flown). So the last
+           position ever tested was around y=24..28, and everything above
+           that was never checked against anything - the top fifth of the
+           playfield was simply not hittable (user report: "enemies at the
+           top edge cannot be shot"). Letting the shot reach y=0 closes the
+           gap, because its sweep box then covers 0..24. The bar sits at the
+           BOTTOM (BAR_Y 144), so row 0 is real playfield, not trim. */
+        if (ny < 0) {
+            /* Do NOT delete it right away, but CLAMP it onto the topmost
+               row and have it checked there once more; only the next tick
+               clears the shot away. Without that a dead strip stays at the
+               top edge: the step is 24 px, the hitbox is extended only
+               DOWNWARD by BULLET_SWEEP, and WHERE the jump sequence ends
+               depends on the ship height (y_start mod 24). Measured, the
+               shot never got below y=20 that way - enemies above it were
+               unshootable (user report). With the clamp EVERY shot passes
+               through y=0, and its box then covers 0..24. Moving the limit
+               from 5 to 0 alone is NOT enough: the 5 usually did not fall
+               between two jump positions at all. */
+            if (g_bullets[i].y == 0u) { g_bullets[i].active = 0; continue; }
+            ny = 0;
+        }
+        {
             u8 obj = (u8)MAPOBJ_NONE;
             u8 p, bx, by, py;
             g_bullets[i].y = (u8)ny;
@@ -4782,6 +5141,13 @@ static void mapobj_bullets_update(void) {
     u8  sdelta = (u8)(g_mo_last_scr1y - g_scr1_y);
     s16 soff;
     g_mo_last_scr1y = g_scr1_y;
+    /* EARLY-OUT, same flag the DRAW loop has used all along (see the
+       g_busy_mobullets test in draw_sprites). With no shot in flight this
+       skipped the 16 empty slots plus ship_hitzone_rect(). It has to sit
+       AFTER g_mo_last_scr1y is updated, or the scroll delta would keep
+       accumulating while we skip and the first frame back would see a jump.
+       Set on spawn and recomputed by the draw loop, so it cannot go stale. */
+    if (!g_busy_mobullets) return;
     if (sdelta > 8u) sdelta = 0u;
     soff = (s16)((u16)sdelta << 4);
     if (ship_vuln)
@@ -6633,6 +6999,10 @@ static void bench_cont_tick(void) {
    - ramming never gave points. */
 static void spawn_killed(u8 spawn_idx, u8 x, u8 y, u8 award_points) {
     u8 grp = lvl_spawn_group[spawn_idx];
+    /* Central death path for every kill, so the explosion is heard exactly
+       once per enemy - the original also queues its effect from the kill
+       routine (1000:3c18), not from the individual weapon handlers. */
+    sfx(SFX_EXPLOSION);
     if (award_points)
         /* This used to multiply by 100, but lvl_spawn_points already
            contains the ORIGINAL values (50/100/120/150/200/300/400). With
@@ -7099,6 +7469,7 @@ static void wormhole_anim_start(u8 exit_idx, u8 with_spawn) {
         u8  ecol = WALLWORM_EXITS[exit_idx].col;
         s16 rr, cc2, d;
         s16 bd0 = 999, bd1 = 999;
+        s16 mr0 = -1, mr1 = -1;   /* MAP rows of the two candidates, see below */
         u8  br0 = 0u, bc0 = 0u, bf0 = 0u, br1 = 0u, bc1 = 0u, bf1 = 0u;
         for (rr = (s16)erow - 7; rr <= (s16)(erow + 2u); rr++) {
             if (rr < 0 || rr >= (s16)LVL_MAP_H) continue;
@@ -7114,10 +7485,10 @@ static void wormhole_anim_start(u8 exit_idx, u8 with_spawn) {
                 adc = (s16)(cc2 - (s16)ecol); if (adc < 0) adc = (s16)-adc;
                 d = (s16)(adr + adc);
                 if (d < bd0) {
-                    bd1 = bd0; br1 = br0; bc1 = bc0; bf1 = bf0;
-                    bd0 = d; br0 = ring2; bc0 = (u8)cc2; bf0 = fl;
+                    bd1 = bd0; br1 = br0; bc1 = bc0; bf1 = bf0; mr1 = mr0;
+                    bd0 = d; br0 = ring2; bc0 = (u8)cc2; bf0 = fl; mr0 = rr;
                 } else if (d < bd1) {
-                    bd1 = d; br1 = ring2; bc1 = (u8)cc2; bf1 = fl;
+                    bd1 = d; br1 = ring2; bc1 = (u8)cc2; bf1 = fl; mr1 = rr;
                 }
             }
         }
@@ -7125,10 +7496,23 @@ static void wormhole_anim_start(u8 exit_idx, u8 with_spawn) {
             g_wormhole_anims[s].cell_row[0] = br0; g_wormhole_anims[s].cell_col[0] = bc0;
             g_wormhole_anims[s].cell_flip[0] = bf0; g_wormhole_anims[s].ncell = 1u;
         }
-        /* take the second cell only if it is close to the first (the
-           mirrored half of the hole), not a completely different hole
-           inside the window */
-        if (bd1 < 999 && (s16)(bd1 - bd0) <= 3) {
+        /* Take the second cell only if it really is the OTHER HALF of the
+           same hole: same map row, directly adjacent column. The old test
+           was "within 3 of the first", which is not a shape - it accepted a
+           cell two rows away. In this map exactly one hole tripped over it:
+           hole 1 (anchor row 116, col 2) picked up the lone 138 at row 118,
+           col 1, so a piece of wall two rows below flickered through the
+           opening animation whenever a worm came out. It was easy to miss
+           because that hole carries no flip bit, so nothing turned the
+           wrong way - the tile simply animated when it should have sat
+           still.
+
+           A hole here is a 137 next to a 138 (left side 137|138, right side
+           mirrored 138|137); the 138 animates, the 137 stays put. NO hole in
+           this map consists of two adjacent 138s, so this branch is
+           currently dead - it is kept for maps where one does. */
+        if (bd1 < 999 && mr1 == mr0
+            && (s16)((bc1 > bc0) ? (bc1 - bc0) : (bc0 - bc1)) == 1) {
             g_wormhole_anims[s].cell_row[1] = br1; g_wormhole_anims[s].cell_col[1] = bc1;
             g_wormhole_anims[s].cell_flip[1] = bf1; g_wormhole_anims[s].ncell = 2u;
         }
@@ -8258,6 +8642,7 @@ static void wcrawls_collide(s16 srx, s16 sry, u8 srw, u8 srh, u8 ship_vuln) {
    immediately, forwards would hit a freshly written entry a second time. */
 static void smart_bomb_detonate(void) {
     u8 j, w, k;
+    sfx(SFX_SMARTBOMB);   /* original effect 0x0B (1000:2ad0) */
     j = (u8)MAX_ENEMIES;
     while (j-- > 0u)
         if (g_enemies[j].active) enemy_take_damage(j, 255u);
@@ -8585,7 +8970,25 @@ static void weapon_update(void) {
                their own update functions (laser/electro/mine_update) which
                check for themselves - so they are not handled through the
                reload tick here. */
-            if (beh == (u8)WPB_LASER || beh == (u8)WPB_ELECTRO || beh == (u8)WPB_MINE) continue;
+            if (beh == (u8)WPB_LASER) {
+                /* Continuous beam: no reload time, no projectile in the
+                   pool. It is drawn as long as fire is held - the muzzle
+                   sits on the weapon module (lvl_weapon_muzzle_dx/dy
+                   relative to the ship). */
+                /* One laser at a time - as in the original, where each
+                   mount has one beam with its own cooldown. If none is in
+                   flight and fire is held, one starts at the muzzle. */
+                if (!g_beam.on && (g_pad & J_A) && g_player.weapon_cooldown[i] == 0u) {
+                    g_beam.x = (u8)(g_player.x + 8u + (u8)lvl_weapon_muzzle_dx[i]);
+                    g_beam.y = (u8)(g_player.y + (u8)lvl_weapon_muzzle_dy[i]);
+                    g_beam.stage = 0u;
+                    g_beam.on = 1u;
+                    g_player.weapon_cooldown[i] = (u8)fps_from60(lvl_weapon_rate[i]);
+                    g_busy_wpbul = 1u;
+                }
+                continue;
+            }
+            if (beh == (u8)WPB_ELECTRO || beh == (u8)WPB_MINE) continue;
             /* NO MORE TAP BYPASS for the module weapons. On the main gun
                it is intentional (see there), and the 4-slot pool throttles
                it: if the pool is full, the press fizzles out. The module
@@ -9634,13 +10037,20 @@ static void draw_sprites(void) {
            below. */
         if (PROF_OFF(15)) continue;   /* profiling sub-block: draw metasprite enemies */
         if (show && cnt && m->chain_base == OAM_NONE && m->oam[0] == OAM_NONE) {
-            u8 base = oam_pool_alloc_run((u8)(cnt * 2u));
+            /* Only as many b slots as cells actually carry an overlay -
+               the a planes come first, the b planes behind them as a
+               second chain (see spr_draw_cell_a/b). */
+            u8 nb = 0u, base;
+            for (c = 0u; c < cnt; c++) if (m->c_needb[c]) nb++;
+            base = oam_pool_alloc_run((u8)(cnt + nb));
             if (base != OAM_NONE) {
+                u8 bslot = (u8)(base + cnt);
                 m->chain_base  = base;
                 m->chain_cells = cnt;
+                m->chain_nb    = nb;
                 for (c = 0u; c < cnt; c++) {
-                    m->oam[c]      = base++;
-                    m->oam_b[c]    = base++;
+                    m->oam[c]      = (u8)(base + c);
+                    m->oam_b[c]    = m->c_needb[c] ? bslot++ : OAM_NONE;
                     m->last_snum[c] = 0u;   /* force a full redraw (sets the chain bits and deltas) */
                 }
             }
@@ -9648,13 +10058,32 @@ static void draw_sprites(void) {
         /* Cell count grew (a metaanim frame with more cells than when the
            block was bought) -> the block no longer fits, so fall back
            cleanly to the old path. */
-        if (m->chain_base != OAM_NONE && cnt > m->chain_cells) {
+        /* Frame needs MORE b overlays than the block has room for (the cell
+           count alone is no longer enough since the b run is sized to
+           demand) -> give the block back and fall through to the old
+           single-slot path, exactly as for a grown cell count. */
+        {
+            u8 release = 0u;
+            if (m->chain_base != OAM_NONE) {
+                if (cnt > m->chain_cells) {
+                    release = 1u;
+                } else {
+                    u8 nbn = 0u;
+                    for (c = 0u; c < cnt; c++) if (m->c_needb[c]) nbn++;
+                    if (nbn > m->chain_nb) release = 1u;
+                }
+            }
+            /* NOT by faking cnt: it is still needed further down to decide
+               which cells to hide, and a doctored value leaves a stale cell
+               standing on a frame with fewer of them. */
+            if (release) {
             for (c = 0u; c < (u8)META_CELLS; c++) {
                 if (m->oam[c] != OAM_NONE) { UnsetSprite(m->oam[c]); oam_pool_free(m->oam[c]); m->oam[c] = OAM_NONE; }
                 if (m->oam_b[c] != OAM_NONE) { UnsetSprite(m->oam_b[c]); oam_pool_free(m->oam_b[c]); m->oam_b[c] = OAM_NONE; }
                 m->last_snum[c] = 0u;
             }
-            m->chain_base = OAM_NONE; m->chain_cells = 0u;
+            m->chain_base = OAM_NONE; m->chain_cells = 0u; m->chain_nb = 0u;
+            }
         }
         if (m->chain_base != OAM_NONE) {
             u8 base = m->chain_base;
@@ -9662,47 +10091,73 @@ static void draw_sprites(void) {
                 /* The whole instance is gone: return the block (the slots
                    are ordinary pool slots, so they are freed individually
                    as usual). */
+                /* cells + b overlays, not 2*cells - the block is sized to
+                   demand (see the allocation above). */
+                u8 k, tot = (u8)(m->chain_cells + m->chain_nb);
+                for (k = 0u; k < tot; k++) {
+                    UnsetSprite(base);
+                    oam_pool_free(base++);
+                }
                 for (c = 0u; c < m->chain_cells; c++) {
-                    UnsetSprite(base);
-                    oam_pool_free(base++);
-                    UnsetSprite(base);
-                    oam_pool_free(base++);
                     m->oam[c] = m->oam_b[c] = OAM_NONE;
                     m->last_snum[c] = 0u;
                 }
-                m->chain_base = OAM_NONE; m->chain_cells = 0u;
+                m->chain_base = OAM_NONE; m->chain_cells = 0u; m->chain_nb = 0u;
                 continue;
             }
-            for (c = 0u; c < m->chain_cells; c++) {
-                if (c >= cnt) {                      /* a frame with fewer cells: hide the rest */
-                    UnsetSprite((u8)(base + c * 2u));
-                    UnsetSprite((u8)(base + c * 2u + 1u));
+            {
+                /* ONE chain, two runs: first every a plane, then only the b
+                   overlays that exist. The first b slot follows the last a
+                   slot, so it chains on and its delta refers to the LAST A
+                   CELL; every further b cell to the previous b cell.
+                   prev_b tracks that predecessor. */
+                u8 bslot = (u8)(base + cnt);
+                u8 prev_b = (u8)(cnt - 1u);   /* start: the last a cell */
+                u8 redraw = 0u;
+                for (c = 0u; c < m->chain_cells; c++)
+                    if (c < cnt && m->c_num[c] != m->last_snum[c]) redraw = 1u;
+                for (c = cnt; c < m->chain_cells; c++) {   /* frame with fewer cells */
+                    UnsetSprite((u8)(base + c));
                     m->last_snum[c] = 0u;
-                    continue;
                 }
-                if (m->c_num[c] != m->last_snum[c]) {
-                    /* Cell 0 holds the absolute position (no chain bit on
-                       a), all others the delta to the PREVIOUS cell. */
-                    if (c == 0u)
-                        spr_draw_chain_cell_f((u8)(base), m->c_num[0],
+                for (c = 0u; c < cnt; c++) {
+                    if (m->c_num[c] != m->last_snum[c]) {
+                        /* Cell 0 holds the absolute position (no chain bit),
+                           all others the delta to the previous a cell. */
+                        if (c == 0u)
+                            spr_draw_cell_a(base, m->c_num[0],
                                             (u8)(m->x + m->c_dx[0]), (u8)(m->y + m->c_dy[0]), 0u,
                                             m->c_flip[0]);
-                    else
-                        spr_draw_chain_cell_f((u8)(base + c * 2u), m->c_num[c],
+                        else
+                            spr_draw_cell_a((u8)(base + c), m->c_num[c],
                                             (u8)(m->c_dx[c] - m->c_dx[c - 1u]),
                                             (u8)(m->c_dy[c] - m->c_dy[c - 1u]), 1u,
                                             m->c_flip[c]);
-                    m->last_snum[c] = m->c_num[c];
+                        m->last_snum[c] = m->c_num[c];
+                    }
+                }
+                /* The b run has to be rewritten as a whole whenever ANY cell
+                   changed: which cells carry an overlay can differ between
+                   animation frames, and with it every delta behind it. */
+                if (redraw) {
+                    for (c = 0u; c < cnt; c++) {
+                        if (!m->c_needb[c]) continue;
+                        spr_draw_cell_b(bslot, m->c_num[c],
+                                        (u8)(m->c_dx[c] - m->c_dx[prev_b]),
+                                        (u8)(m->c_dy[c] - m->c_dy[prev_b]), 1u,
+                                        m->c_flip[c]);
+                        prev_b = c;
+                        bslot++;
+                    }
+                    while (bslot < (u8)(base + cnt + m->chain_nb)) UnsetSprite(bslot++);
                 }
             }
             /* THE gain: a single position for the whole metasprite. */
             SetSpritePosition(base, (u8)(m->x + m->c_dx[0]), (u8)(m->y + m->c_dy[0]));
             if (m->flash) {
                 u8 *sc = SPRITE_COLOUR;
-                for (c = 0u; c < m->chain_cells; c++) {
-                    sc[base++] = (u8)FLASH_PAL;
-                    sc[base++] = (u8)FLASH_PAL;
-                }
+                u8 k, tot = (u8)(m->chain_cells + m->chain_nb);   /* sized to demand, see above */
+                for (k = 0u; k < tot; k++) sc[base++] = (u8)FLASH_PAL;
                 m->flash--;
                 if (m->flash == 0u)
                     for (c = 0u; c < (u8)META_CELLS; c++) m->last_snum[c] = 0u;
@@ -10709,6 +11164,10 @@ static void game_start(void) {
         for (tx = 0; tx < 20; tx++) {
             g_bar_col[tx]  = barMapDef[tx];
         }
+        /* barMapDef carries the EMPTY tile in the lives column; the digit
+           is only added here, otherwise it would be gone after every
+           rebuild. */
+        bar_set_lives();
     }
     {
         u8 ay, ax;
@@ -11228,6 +11687,11 @@ static u8 shop_input(void) {   /* returns 1 = leave the shop */
             return 0u;                      /* IMPORTANT: this B press is consumed */
         }
         if (g_pad_pressed & J_A) {
+            /* Original effect 0x09 fires on the KEYPRESS ("9 on fire",
+               shop.md), not on a successful purchase - so a rejected buy
+               still clicks. Sounds before the exit test, or leaving the
+               shop would be the one silent button. */
+            sfx(SFX_SHOPBUY);
             if (g_shop_sel == (u8)SHOP_SEL_EXIT) return 1u;      /* leave the shop */
             if (g_shop_sel == (u8)SHOP_SEL_BUY)  shop_do_buy(g_shop_last_item);
             else                                 shop_do_sell(g_shop_last_item);
@@ -11692,6 +12156,7 @@ static void level_loop_restart(void) {
     g_player.firerate_stage = keep_rate;
     g_player.speed_stage    = keep_speed;
     g_player.lives          = keep_lives;
+    bar_set_lives();
     g_player.energy         = keep_energy;
     /* scaled with the frame rate (unchanged 16/32/48 at 30 fps). */
     g_tune_speed = (u8)FPS_SPD((u16)(PLAYER_SPEED_STEP + (u16)(g_player.speed_stage * PLAYER_SPEED_STAGE_STEP)));
@@ -13587,7 +14052,19 @@ void main(void) {
                   g_player.firerate_stage = (u8)(LVL_FIRERATE_STAGE_COUNT - 1u);
                   g_player.weapons_active = (u16)((1u << 0) | (1u << 2)); } }
 #endif
+#if START_WEAPONS
+            /* Test build: the ship carries the weapons from START_WEAPONS
+               from the first second, without the detour through the shop.
+               Bitmask over lvl_weapon_* - bit 3 is the laser
+               (wp_behavior[3] = WPB_LASER). Applied once, so that a death
+               still resets the loadout normally and the rollback stays
+               testable. */
+            { static u8 sw_done;
+              if (!sw_done) { sw_done = 1u;
+                  g_player.weapons_active |= (u16)(START_WEAPONS); } }
+#endif
             player_update();
+            beam_update();   /* flying laser, see beam_draw */
 #if BENCH_DETERM
             bench_determ_tick();   /* fixed enemy scene for repeatable measurements (see BENCH_DETERM) */
 #endif
@@ -13883,7 +14360,15 @@ void main(void) {
                    change. */
                 shop_icons_anim();
             }
-            if (shop_input()) {
+            /* Cursor click: compare the selection ACROSS the call instead of
+               adding a beep to each of the six movement branches (grid plus
+               button row) - one place, and it cannot fall out of step with a
+               branch someone adds later. Original effect 0x08, queued from
+               the shop's input handler (1000:5369). */
+            { u8 sel_vorher = g_shop_sel;
+              u8 raus = shop_input();
+              if (g_shop_sel != sel_vorher) sfx(SFX_SHOPCUR);
+              if (raus) {
                 g_shop_entered = 0u;
                 g_shop_a_count = 0u;
                 shop_oam_clear();   /* switch off the shop sprites BEFORE the game continues */
@@ -13897,6 +14382,7 @@ void main(void) {
                 spr_tiles_upload();
                 spr_pal_load();
                 g_score_last_shown = 0xFFFFu;
+              }
             }
         }
 #if TELEMETRY

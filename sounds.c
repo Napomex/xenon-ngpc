@@ -724,6 +724,9 @@ static u8 s_bgm_gate_percent;
 static u8 s_bgm_fade_speed;    /* 0 = no fade; >0 = frames between fade steps */
 static u8 s_bgm_fade_counter;
 static u8 s_bgm_fade_attn;     /* additional global attn offset (0-15) */
+/* Permanent music-only attenuation, set by Bgm_SetMasterAttn(). Survives
+   Bgm_Start(), unlike s_bgm_fade_attn. 2 dB per step. */
+static u8 s_bgm_master_attn;
 static u8 s_bgm_last_vbl;
 static u32 s_bgm_song_frame;
 static BgmDebug s_bgm_dbg;
@@ -1066,6 +1069,16 @@ static void BgmVoice_CommandFromState(BgmVoice *v, PsgCmd *cmd)
             u8 fa = (u8)(final_attn + s_bgm_fade_attn);
             if (fa > 15) fa = 15;
             final_attn = fa;
+        }
+        /* Master attenuation for the MUSIC only - the sound effects do not pass
+           through here, so raising it makes them stand out without touching a
+           single effect. Deliberately NOT s_bgm_fade_attn: that one belongs to
+           the fade machinery and every Bgm_Start resets it to 0, which would
+           silently drop the setting on the next tune. */
+        if (s_bgm_master_attn > 0) {
+            u8 ma = (u8)(final_attn + s_bgm_master_attn);
+            if (ma > 15) ma = 15;
+            final_attn = ma;
         }
         if (v->mode == 1) {
             PsgCmd ncmd;
@@ -2502,6 +2515,21 @@ void Bgm_SetGate(u8 percent)
    base attn and the current attn so a sustained note updates immediately.
    voice: 0=CH0 1=CH1 2=CH2 3=noise. Re-apply each frame if a song's baked
    SET_ATTN opcodes would otherwise overwrite it (they run at note/loop). */
+/* Music master volume. 0 = unchanged, 15 = silent, 2 dB per step. Applies to
+   ALL four music voices and to every tune, but NOT to the sound effects -
+   that is the point: it lifts the effects out of the arrangement without
+   changing a single effect definition.
+
+   !! NOT reset by Bgm_Start(). Bgm_SetVoiceAttn() writes an ABSOLUTE value
+   that the next note overwrites from the instrument table, so it cannot hold
+   a permanent setting; this offset is applied after the instrument, the
+   envelope, the LFO and the fade. */
+void Bgm_SetMasterAttn(u8 attn)
+{
+    if (attn > 15) attn = 15;
+    s_bgm_master_attn = attn;
+}
+
 void Bgm_SetVoiceAttn(u8 voice, u8 attn)
 {
     if (attn > 15) attn = 15;

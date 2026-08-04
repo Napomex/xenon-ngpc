@@ -167,6 +167,7 @@ void Bgm_Update(void);
 void Bgm_SetSpeed(u8 mul);
 void Bgm_SetGate(u8 percent);
 void Bgm_SetVoiceAttn(u8 voice, u8 attn);   /* live per-voice volume: 0=loud..15=silent */
+void Bgm_SetMasterAttn(u8 attn);            /* music-only master: 0=unchanged..15=silent, 2 dB/step, survives Bgm_Start */
 void Bgm_DebugReset(void);
 void Bgm_DebugSnapshot(BgmDebug *out);
 
