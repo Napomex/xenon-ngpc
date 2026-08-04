@@ -3410,34 +3410,63 @@ static void beam_draw(u8 bi, u8 stage, u8 gun_x, u8 gun_y) {
             for (i = 0u; i < g_beam.cnt; i++) oam_pool_free(g_beam.oams[i]);
             g_beam.oam = OAM_NONE; g_beam.cnt = 0u;
         }
+        /* !! NIMM, WAS DA IST - GAR NICHTS IST DIE SCHLECHTESTE ANTWORT.
+           Vorher gab der Strahl alles zurueck, wenn nicht ALLE Slots zu
+           haben waren, und war damit unsichtbar. Im dichten Gegnerband ist
+           der Pool aber zeitweise leer, und genau dort passiert es: der
+           Laser "steigt nach dem ersten Viertel aus und schiesst erst nach
+           dem Endboss wieder" (Nutzerbefund 04.08.) - dazwischen liegt die
+           Strecke, auf der am meisten los ist.
+           Mit zwei Slots (Ende + Kopf) ist der Strahl noch als Strahl zu
+           erkennen; darunter lohnt er nicht. */
         { u8 noetig = (u8)(seg_max + 2u), habe = 0u;
           for (i = 0u; i < noetig; i++) {
               first = oam_pool_alloc();
               if (first == OAM_NONE) break;
               g_beam.oams[habe++] = first;
           }
-          if (habe < noetig) {          /* alles zurueck, lieber gar nichts */
+          if (habe < 2u) {              /* nicht einmal Ende und Kopf */
               for (i = 0u; i < habe; i++) oam_pool_free(g_beam.oams[i]);
               return;
           }
-          g_beam.cnt = noetig; g_beam.oam = g_beam.oams[0]; }
+          g_beam.cnt = habe; g_beam.oam = g_beam.oams[0]; }
     }
+    /* Mehr Mittelteile, als Slots da sind, gibt es nicht. */
+    if ((u8)(seg + 2u) > g_beam.cnt) seg = (u8)(g_beam.cnt - 2u);
 
     /* bottom: the tail, usually the mirrored head */
     y = gun_y;
     spr_draw_s_single_flip(g_beam.oams[0], head, gun_x, y,
                            beam_tail_flip[bi][stage] ? (u8)SPR_VFLIP : 0u);
-    /* the middle pieces above it */
-    for (i = 0u; i < seg; i++) {
-        y = (u8)(y - mh);
-        spr_draw_s_single(g_beam.oams[1u + i], mid, gun_x, y);
-    }
-    /* the head at the very top */
-    spr_draw_s_single(g_beam.oams[1u + seg], head, gun_x, (u8)(y - mh));
+    /* Die Mittelteile darueber - FLACKERND, wenn nicht alle Plaetze da sind.
+       Ein Mittelteil wird dann nur jeden zweiten Frame gezeichnet, zwei
+       teilen sich einen Slot. Bei 20 fps flackert das mit 10 Hz; auf einer
+       durchgehenden Saeule faellt das weit weniger auf als eine Luecke, und
+       ein halber Strahl ist besser als keiner. Dasselbe Mittel wie bei den
+       Spielerschuessen (siehe SPR_BULLET_0). */
+    { u8 voll = (u8)(beam_len[bi][stage] / mh);      /* was die Stufe eigentlich will */
+      u8 phase = (u8)(g_flicker & 1u);
+      u8 slot = 1u;
+      if (voll > seg) {
+          /* zu wenig Slots: die fehlenden Stufen im Wechsel ueberspringen */
+          for (i = 0u; i < voll && slot <= seg; i++) {
+              y = (u8)(y - mh);
+              if (((i + phase) % 2u) == 0u || (voll - i) <= (seg - slot + 1u))
+                  spr_draw_s_single(g_beam.oams[slot++], mid, gun_x, y);
+          }
+      } else {
+          for (i = 0u; i < seg; i++) {
+              y = (u8)(y - mh);
+              spr_draw_s_single(g_beam.oams[slot++], mid, gun_x, y);
+          }
+      }
+      /* the head at the very top */
+      spr_draw_s_single(g_beam.oams[slot], head, gun_x, (u8)(y - mh)); }
     /* What the block has beyond the clipped length: hide it, do NOT
        release it - otherwise it falls apart and the next request finds no
        contiguous room any more. */
     for (i = (u8)(seg + 2u); i < g_beam.cnt; i++) UnsetSprite(g_beam.oams[i]);
+    (void)0;
     g_beam.top = (u8)(y - mh);
     g_beam.on = 1u;
 }
