@@ -535,28 +535,35 @@ u16 g_oam_pos_shadow[64];
    in the same breath - so nothing is lost.
    SetSprite() and SpriteControl() stay, for the sites that really only
    change one of the two. */
-void SetSpriteEx(u8 SpriteNo, u16 TileNo, u8 Chain, u8 XPos, u8 YPos,
-                 u8 PaletteNo, u8 Ctrl) {
-   u8 * theSprite    = SPRITE_RAM + (SpriteNo * 4);
+/* !! THE PARAMETERS ARE u16, AND THAT IS THE POINT (Thor, 04.08.2026).
+   With u8 the TLCS-900/H zero-extends TWICE per call - once in the caller
+   to get the value into the register and once in the callee to read it
+   back off the stack. As u16 it is taken from the stack as it lies. Every
+   instruction byte costs three cycles, and these three functions are the
+   most-called in the game.
+   Safe, because EVERY position argument in xenon.c is already a u8 local
+   or an explicit (u8) cast - checked at all 27 SetSprite and 19
+   SetSpritePosition sites. The u8 parameter used to do the truncating; if
+   a caller ever hands over something wider, XPos | (YPos << 8) puts the
+   overflow into the neighbouring byte instead of dropping it. */
+void SetSpriteEx(u16 SpriteNo, u16 TileNo, u16 Chain, u16 XPos, u16 YPos,
+                 u16 PaletteNo, u16 Ctrl) {
+   u16 * theSprite   = (u16 *)(SPRITE_RAM + (SpriteNo * 4));
    u8 * theSpriteCol = SPRITE_COLOUR + SpriteNo;
-   u16 *w = (u16 *)theSprite;
-   u16 ctl, lo, hi;
 
-   ctl = (u16)Ctrl;
-   if (Chain) ctl = (u16)(ctl | 6u);      /* h and v chaining */
-   ctl = (u16)(ctl | (TileNo >> 8));      /* tile bit 8 */
+   if (Chain) Ctrl = (u16)(Ctrl | 6u);    /* h and v chaining */
 
-   lo = (u16)(TileNo & 0x00FFu);
-   hi = (u16)(ctl << 8);
-   w[0] = (u16)(lo | hi);
-   hi   = (u16)((u16)YPos << 8);
-   w[1] = (u16)((u16)XPos | hi);
-   g_oam_pos_shadow[SpriteNo] = w[1];     /* keep the position cache up to date */
+   /* Tile bit 8 lands on bit 8 of the word by itself, which is exactly
+      where it belongs - so TileNo goes in whole instead of being split
+      into a low byte and a shifted high bit. */
+   *theSprite++ = (u16)((Ctrl << 8) | TileNo);
+   g_oam_pos_shadow[SpriteNo] = (u16)(XPos | (YPos << 8));
+   *theSprite = g_oam_pos_shadow[SpriteNo];
 
    *theSpriteCol = PaletteNo;
 }
 
-void SetSprite(u8 SpriteNo, u16 TileNo, u8 Chain, u8 XPos, u8 YPos, u8 PaletteNo) {
+void SetSprite(u16 SpriteNo, u16 TileNo, u16 Chain, u16 XPos, u16 YPos, u16 PaletteNo) {
 //////////////////////////////////////////////////////////////////////////////
 // SetSprite
 // Initialise a sprite by mapping a tile number and sprite palette no
@@ -566,33 +573,21 @@ void SetSprite(u8 SpriteNo, u16 TileNo, u8 Chain, u8 XPos, u8 YPos, u8 PaletteNo
 //      XPos - X Position (0 to 255)
 //      YPos - Y Position (0 to 255)
 //////////////////////////////////////////////////////////////////////////////
-   u16 SprCtrlReg;
-   u8 * theSprite = SPRITE_RAM;
-   u8 * theSpriteCol = SPRITE_COLOUR;
-   
-   theSprite += (SpriteNo * 4);
-   theSpriteCol += SpriteNo;
+   u16 SprCtrlReg = 24 << 8;   /* topmost priority, already in the high byte */
+   u16 * theSprite   = (u16 *)(SPRITE_RAM + (SpriteNo * 4));
+   u8 * theSpriteCol = SPRITE_COLOUR + SpriteNo;
 
-   SprCtrlReg = 24; // topmost priority
    if (Chain)
-      SprCtrlReg += 6; // v and h chaining
+      SprCtrlReg |= 6 << 8;    /* v and h chaining */
 
    /* OAM optimisation: write the four bytes as TWO 16-bit words rather
       than four single bytes, halving the bus transactions to the OAM
       (0x8800 is word aligned, so +0 and +2 are always even). The K2GE
       penalises every individual access during active display, so the count
       matters directly. */
-   {
-      u16 *w = (u16 *)theSprite;
-      u16 ctl, lo, hi;
-      lo  = (u16)(TileNo & 0x00FFu);
-      ctl = (u16)(SprCtrlReg + (TileNo >> 8));
-      hi  = (u16)(ctl << 8);
-      w[0] = (u16)(lo | hi);                             /* Byte0 Tile-Low, Byte1 Ctrl */
-      hi   = (u16)((u16)YPos << 8);
-      w[1] = (u16)((u16)XPos | hi);                      /* Byte2 X, Byte3 Y */
-      g_oam_pos_shadow[SpriteNo] = w[1];                 /* keep the position cache up to date (see SetSpritePosition) */
-   }
+   *theSprite++ = (u16)(SprCtrlReg | TileNo);              /* Byte0 Tile-Low, Byte1 Ctrl */
+   g_oam_pos_shadow[SpriteNo] = (u16)(XPos | (YPos << 8)); /* Byte2 X, Byte3 Y */
+   *theSprite = g_oam_pos_shadow[SpriteNo];                /* keep the position cache up to date (see SetSpritePosition) */
 
    *theSpriteCol = PaletteNo;
 }
@@ -617,7 +612,7 @@ void SpriteControl(u8 SpriteNo, u8 Priority, u8 Flips) {
 };
 
 
-void SetSpritePosition(u8 SpriteNo, u8 XPos, u8 YPos) {
+void SetSpritePosition(u16 SpriteNo, u16 XPos, u16 YPos) {
 //////////////////////////////////////////////////////////////////////////////
 // SetSpritePosition
 // Moves a already initialise sprite
@@ -638,8 +633,8 @@ void SetSpritePosition(u8 SpriteNo, u8 XPos, u8 YPos) {
       nothing at all.    Safe, because every drawing path forces a FULL
       redraw after an UnsetSprite    (last_snum=0 / g_ship_last_meta=0xFF)
       - SetSprite always writes and updates the    cache. */
-   u16 hi = (u16)((u16)YPos << 8);
-   u16 xy = (u16)((u16)XPos | hi);
+   u16 hi = (u16)(YPos << 8);
+   u16 xy = (u16)(XPos | hi);
    if (g_oam_pos_shadow[SpriteNo] == xy) return;
    g_oam_pos_shadow[SpriteNo] = xy;
    ((u16 *)(SPRITE_RAM))[(SpriteNo * 2) + 1] = xy;

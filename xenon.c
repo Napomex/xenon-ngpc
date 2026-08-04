@@ -293,13 +293,23 @@ static u8 fps_anim_div(u8 speed) {
     return (u8)(d ? d : 1u);
 }
 
+/* !! NO MUL AND NO DIV (idea: Thor, 04.08.2026). On the TLCS-900/H a
+   multiply costs about 26 states and a divide about 30, against 2 for an
+   add - and this runs for every speed value in every frame at 20 fps.
+
+   !! THE HALVING IS SIGN-SYMMETRIC, NOT A PLAIN >>1. Thor's version wrote
+   (m-1) >> 1 for the negative branch, and that is NOT the same thing:
+   MEASURED in this very toolchain (probe with cc900 -O3, 04.08.), the
+   signed division truncates towards zero while the shift rounds DOWN. At
+   m = -6 the division gives -3 and the shift -4 - every speed to the left
+   or upwards would have come out one pixel too large at 20 fps. So the
+   shift only ever sees a non-negative value here, where the two agree. */
 static s16 fps_spd_s(s16 v) {
     s16 m;
     if (g_fps_div == 2u) return v;   /* 30 fps: unchanged */
-    m = (s16)(v * 3);                /* 20 fps: x 3/2 */
-    if (m < 0) { m = (s16)(m - 1); return (s16)(m / 2); }
-    m = (s16)(m + 1);
-    return (s16)(m / 2);
+    m = (s16)(v + v + v);            /* 20 fps: x 3/2 */
+    if (m < 0) return (s16)(-(s16)((s16)((s16)(-m) + 1) >> 1));
+    return (s16)((s16)(m + 1) >> 1);
 }
 
 /* Scroll speed in frames per pixel. 3 = normal pace (10 px/s, one tile in
@@ -1776,6 +1786,58 @@ static u8      g_wpmod_oam0, g_wpmod_oam1;         /* dynamic, OAM_NONE = no slo
    lvl_mount_dx[slot] - lvl_weapon_anchor_dx[weapon] The reference point is
    the point INSIDE the module that comes to lie on the position - for the
    cannon's 8x16 module that is (4,8), not the corner. */
+/* ---- Power per weapon ----    In the original every mounted weapon
+   carries its OWN power (entity field +0x34) with its own cap (+0x24);
+   collecting the same weapon again does not give a second one but raises
+   that power by 1 up to the cap (weapons.md sec.1, helper 1000:2ef8). Until
+   now a re-collect only set an already set bit - the pickup did nothing at
+   all.
+
+   The cap comes from the tool once it exports one. Until then it is
+   derived from lvl_shop_desc, which records for each weapon whether the
+   original gives it power stages at all: "fix, keine Power-Stufen im
+   Original" stands against weapons 2, 4, 6, 8 and 10 - and weapon 2 is the
+   cannon, for which weapons.md gives cap 0 as well. So the two sources
+   agree and the table is not a guess.
+
+   !! THE SIDE GROUP DEVIATES FROM THE ORIGINAL, DELIBERATELY. There a
+   re-collect claims ANOTHER free side position instead of raising the
+   power, and with all four full the pickup is a no-op. That needs a mount
+   to own a weapon rather than a weapon owning a mount - a weapon would
+   have to be drawn AND fired several times. As long as one weapon has at
+   most one position, the alternative to raising the power would be a
+   pickup that visibly does nothing. */
+#ifndef LVL_WEAPON_POWER_CAP_COUNT
+static const u8 wp_power_cap_def[11] = { 2u, 2u, 0u, 2u, 0u, 2u, 0u, 2u, 0u, 2u, 0u };
+#endif
+
+static u8 g_wp_power[LVL_WEAPON_COUNT];    /* 0..cap, per weapon */
+
+static u8 wp_power_cap(u8 w) {
+#ifdef LVL_WEAPON_POWER_CAP_COUNT
+    return (w < (u8)LVL_WEAPON_POWER_CAP_COUNT) ? lvl_weapon_power_cap[w] : 0u;
+#else
+    return (w < (u8)(sizeof(wp_power_cap_def) / sizeof(wp_power_cap_def[0])))
+             ? wp_power_cap_def[w] : 0u;
+#endif
+}
+
+static u8 wp_power(u8 w) {
+    return (w < (u8)LVL_WEAPON_COUNT) ? g_wp_power[w] : 0u;
+}
+
+/* +delta, capped. Returns 1 if anything actually moved - the shop needs
+   that to decide whether a POWER article may still be sold. */
+static u8 wp_power_add(u8 w, u8 delta) {
+    u8 cap, neu;
+    if (w >= (u8)LVL_WEAPON_COUNT) return 0u;
+    cap = wp_power_cap(w);
+    if (g_wp_power[w] >= cap) return 0u;
+    neu = (u8)(g_wp_power[w] + delta);
+    g_wp_power[w] = (neu > cap) ? cap : neu;
+    return 1u;
+}
+
 #ifdef LVL_MOUNT_COUNT
 static u8  g_wp_mount[LVL_WEAPON_COUNT];   /* Platz je Waffe, 0xFF = keiner */
 static u16 g_wp_mount_for;                 /* the weapons_active it holds for */
@@ -2012,6 +2074,7 @@ static u8 g_respawn_pending;   /* death detected, re-entry at the end of the fra
 static u32 g_cp_cash;
 static u16 g_cp_weapons;
 static u8  g_cp_power;
+static u8  g_cp_wp_power[LVL_WEAPON_COUNT];   /* power per weapon at the checkpoint */
 
 /* During the boss cash rain the player is invulnerable. Greater than 0
    while rain tokens are still outstanding. */
@@ -2553,7 +2616,11 @@ static void hitzone_resolve(u16 spr, u8 fallback_w, u8 fallback_h,
     *w = fallback_w; *h = fallback_h;
 }
 
-static u8 rects_overlap(s16 ax, s16 ay, u8 aw, u8 ah, s16 bx, s16 by, u8 bw, u8 bh) {
+/* aw/ah/bw/bh as u16 for the same reason as the SetSprite parameters:
+   a u8 parameter is zero-extended twice per call, and check_collisions()
+   makes up to MAX_ENEMIES+MAX_METAENEMIES of them every frame. The values
+   are widths, always positive, so nothing changes about the arithmetic. */
+static u8 rects_overlap(s16 ax, s16 ay, u16 aw, u16 ah, s16 bx, s16 by, u16 bw, u16 bh) {
     if ((s16)(ax + (s16)aw) <= bx || (s16)(bx + (s16)bw) <= ax) return 0u;
     if ((s16)(ay + (s16)ah) <= by || (s16)(by + (s16)bh) <= ay) return 0u;
     return 1u;
@@ -3387,15 +3454,26 @@ static struct {
        the collision would mean copying the clipping and the segment count -
        and the first change to either would silently make the two disagree. */
     u8 top;
+    /* Which weapon fired it. The damage is (power+1)x3 with the LASER'S
+       power, and that has to be the power of the weapon actually behind
+       the beam - a fixed index would be wrong the moment a second weapon
+       carries WPB_LASER. Written at launch, read by beam_collide. */
+    u8 wp;
 } g_beam;
 
 /* Flugtempo wie ein Spielerschuss: BULLET_SPEED px je Spielframe. */
 #define BEAM_SPEED FPS_SPD(8u)
 
+/* ONE call instead of two (Thor, 04.08.2026). SetSprite followed by
+   SpriteControl costs a second far call and a read-modify-write on the
+   same OAM byte that SetSprite has just written; SetSpriteEx folds the
+   control byte in while the word is being assembled. The unflipped
+   spr_draw_s_single() next to it has done this for a while - this path
+   simply never followed. */
 static void spr_draw_s_single_flip(u8 oam, u16 s_num, u8 x, u8 y, u8 flip) {
     u16 n = (u16)(s_num - 1u);
-    SetSprite(oam, spr_vram(lvl_sspr_a_idx[n]), 0, x, y, lvl_sspr_a_pal[n]);
-    SpriteControl(oam, SPR_FRONT, flip);
+    SetSpriteEx(oam, spr_vram(lvl_sspr_a_idx[n]), 0, x, y, lvl_sspr_a_pal[n],
+                (u8)(SPR_FRONT | flip));
 }
 
 /* ============ Draw the beam weapon ============ Head at the top, the
@@ -5143,6 +5221,12 @@ static void scroll_update(void) {
                         if (g_nashwan_timer == 0u) {
                             g_cp_weapons = g_player.weapons_active;
                             g_cp_power   = g_player.power_stage;
+                            /* The per-weapon power belongs to the loadout.
+                               Without it a death threw away every stage
+                               collected since the level start while the
+                               weapons themselves came back. */
+                            { u8 cw; for (cw = 0u; cw < (u8)LVL_WEAPON_COUNT; cw++)
+                                  g_cp_wp_power[cw] = g_wp_power[cw]; }
                         }
                     }
                 }
@@ -5219,6 +5303,11 @@ static void player_init(void) {
     g_player.power_stage    = 0u;
     g_player.speed_stage    = 0u;
     g_player.weapons_active = 0u;
+    /* Power per weapon back to zero. Explicitly, like the mount table
+       above: a static carries no guaranteed initial value, RAM is not
+       cleared at power-on, and a laser that starts at power 2 by accident
+       would be a hard fault to explain. */
+    for (w = 0u; w < (u8)LVL_WEAPON_COUNT; w++) g_wp_power[w] = 0u;
     for (w = 0u; w < (u8)LVL_WEAPON_COUNT; w++) g_player.weapon_cooldown[w] = 0u;
 }
 
@@ -7499,10 +7588,18 @@ static void metaenemy_take_damage(u8 j, u8 dmg) {
    faithful to the original (see enemy_take_damage). As functions, so all
    four hit sites use the same value consistently. */
 static u8 main_gun_damage(void)  { return lvl_power_stage_damage[g_player.power_stage]; }
-static u8 rear_gun_damage(void)  { return (u8)(lvl_weapon_damage[0] + g_player.power_stage); }
+/* !! THE WEAPON'S OWN POWER, NOT THE SHIP'S. Both used to add
+   g_player.power_stage, so every weapon grew with the shop article and a
+   collected weapon never grew at all. In the original the power sits on
+   the WEAPON (weapons.md sec.1: field +0x34 with cap +0x24), which is what
+   makes collecting the same one again worth anything. The ship-wide stage
+   still exists - it belongs to the DEFAULT forward shot, which is not in
+   lvl_weapon_* and therefore has no power of its own (main_gun_damage
+   above). */
+static u8 rear_gun_damage(void)  { return (u8)(lvl_weapon_damage[0] + wp_power(0u)); }
 /* Damage per module weapon rather than the rear gun's value for
    everything. */
-static u8 wp_gun_damage(u8 w)    { return (u8)(lvl_weapon_damage[w] + g_player.power_stage); }
+static u8 wp_gun_damage(u8 w)    { return (u8)(lvl_weapon_damage[w] + wp_power(w)); }
 
 /* Hit a worm segment (the centipede principle): segment k dies and all
    FOLLOWING segments move up one position in the chain (a complete struct
@@ -9118,9 +9215,25 @@ static void apply_pickup(u8 kind, u16 value) {
         g_player.power_stage = (u8)(g_player.power_stage + value);
         if (g_player.power_stage > (u8)(LVL_POWER_STAGE_COUNT - 1u))
             g_player.power_stage = (u8)(LVL_POWER_STAGE_COUNT - 1u);
+        /* The POWER token raises EVERY mounted weapon as well, each up to
+           its own cap. In the original the ship has no power of its own -
+           the article exists because the weapons have one (the stock check
+           1000:50d8 sells it as long as any mounted weapon is below its
+           cap). Without this the token would only reach the default
+           forward shot and be worthless with a full loadout. */
+        { u8 pw;
+          for (pw = 0u; pw < (u8)LVL_WEAPON_COUNT; pw++)
+              if (g_player.weapons_active & ((u16)1u << pw))
+                  (void)wp_power_add(pw, (u8)value); }
         break;
     case 3:
-        g_player.weapons_active |= (u16)((u16)1u << value);
+        /* Already carried -> the weapon gets STRONGER instead of the bit
+           being set a second time (weapons.md sec.1). Before this a
+           re-collect did literally nothing. */
+        if (g_player.weapons_active & ((u16)1u << value))
+            (void)wp_power_add((u8)value, 1u);
+        else
+            g_player.weapons_active |= (u16)((u16)1u << value);
         break;
     case 4:  /* Speedup (DOS pickup type 0, "S"): ship speed up by value stages, capped */
         g_player.speed_stage = (u8)(g_player.speed_stage + value);
@@ -9371,18 +9484,21 @@ static void weapon_update(void) {
                        two functions (see wp_spawn); the beam did not. */
                     g_beam.x = (u8)((s16)g_player.x + wpx_dx(i) + WPX_MUZZLE_DX(i));
                     g_beam.y = (u8)((s16)g_player.y + wpx_dy(i) + WPX_MUZZLE_DY(i));
-                    /* The upgrade stage is the ship's power stage - the same
-                       one that scales every other weapon (lvl_power_stage_*,
-                       raised by the power pickup, see apply_pickup). It used
-                       to be nailed to 0, so stage 1 and 2 were drawn and
-                       loaded but never reached.
+                    /* The upgrade stage is the LASER'S power - collect the
+                       laser again and the beam gets longer and stronger,
+                       as in the original. It used to be nailed to 0, so
+                       stage 1 and 2 were drawn and loaded but never
+                       reached; then it hung on the ship-wide power stage,
+                       which grew with the shop article for every weapon at
+                       once.
                        CLAMPED, because the two counts come from different
                        tables: LVL_POWER_STAGE_COUNT belongs to the pickups,
                        BEAM_STAGES to the "Beams" tab. They are both 3 today
                        and there is nothing keeping them that way - a beam
                        tab with two stages would otherwise index past the
                        end and draw whatever follows in ROM. */
-                    g_beam.stage = g_player.power_stage;
+                    g_beam.wp    = i;   /* damage source, see beam_collide */
+                    g_beam.stage = wp_power(i);
                     if (g_beam.stage >= (u8)BEAM_STAGES)
                         g_beam.stage = (u8)((u8)BEAM_STAGES - 1u);
                     g_beam.on = 1u;
@@ -9889,7 +10005,10 @@ static void beam_collide(void) {
        The beam is a projectile: it passes a target once and hits it for the
        two or three frames it overlaps, at 20 fps exactly as at 30. That is
        also the situation the original's number is written for. */
-    dmg  = (u8)(((u8)g_player.power_stage + 1u) * 3u);
+    /* (power+1)x3 per tick from the original - with the LASER'S power, not
+       the ship's. See rear_gun_damage/wp_gun_damage on why the two are not
+       the same thing. */
+    dmg  = (u8)((wp_power(g_beam.wp) + 1u) * 3u);
     px   = (u8)(g_beam.x + 4u);
     /* Map objects and the boss are POINT tests, so the column has to be
        sampled instead of handed over as a box. Every 8 px: that is the
@@ -11914,6 +12033,7 @@ static void game_start(void) {
     /* Set the loadout snapshot to the starting state, so dying before the
        first checkpoint falls back cleanly to the start of the level. */
     g_cp_cash = 0u; g_cp_weapons = g_player.weapons_active; g_cp_power = 0u;
+    { u8 cw; for (cw = 0u; cw < (u8)LVL_WEAPON_COUNT; cw++) g_cp_wp_power[cw] = g_wp_power[cw]; }
     g_boss_rain = 0u; g_nashwan_timer = 0u;
     boss_reset();
     g_state      = STATE_PLAY;
@@ -12692,10 +12812,23 @@ static u8 shop_do_buy(u8 idx) {
     } else {
         /* likewise for power: lvl_power_stage_damage[] only has
            LVL_POWER_STAGE_COUNT entries */
-        if (g_player.power_stage >= (u8)(LVL_POWER_STAGE_COUNT - 1u)) {
-            shop_text_draw(lvl_shop_txt_no_room); return 0u;
-        }
-        g_player.power_stage++;
+        /* !! THE ARTICLE IS SOLD WHILE ANY MOUNTED WEAPON CAN STILL GROW,
+           not while the ship stage can (weapons.md sec.5, stock check
+           1000:50d8). Both used to hang on the ship stage alone: with the
+           stage at maximum the article vanished from the shop even though
+           every weapon was still at power 0 - and while the stage could
+           grow, buying reached the default forward shot only. */
+        { u8 pw, geht = 0u;
+          if (g_player.power_stage < (u8)(LVL_POWER_STAGE_COUNT - 1u)) geht = 1u;
+          for (pw = 0u; pw < (u8)LVL_WEAPON_COUNT; pw++)
+              if ((g_player.weapons_active & ((u16)1u << pw))
+                  && g_wp_power[pw] < wp_power_cap(pw)) geht = 1u;
+          if (!geht) { shop_text_draw(lvl_shop_txt_no_room); return 0u; }
+          if (g_player.power_stage < (u8)(LVL_POWER_STAGE_COUNT - 1u))
+              g_player.power_stage++;
+          for (pw = 0u; pw < (u8)LVL_WEAPON_COUNT; pw++)
+              if (g_player.weapons_active & ((u16)1u << pw))
+                  (void)wp_power_add(pw, 1u); }
     }
     if (!god_active()) g_cash -= (u32)pr;
     shop_text_draw(lvl_shop_txt_give_cash);
@@ -13029,6 +13162,8 @@ static void respawn_do(void) {
     g_cash                  = g_cp_cash;
     g_player.weapons_active = g_cp_weapons;
     g_player.power_stage    = g_cp_power;
+    { u8 rw; for (rw = 0u; rw < (u8)LVL_WEAPON_COUNT; rw++)
+          g_wp_power[rw] = g_cp_wp_power[rw]; }
     g_boss_rain             = 0u;   /* no rain window after a respawn */
     g_nashwan_timer         = 0u;   /* death ends Nashwan (the loadout falls back to the checkpoint state) */
     g_tilt_level = 0; g_coast_x = 0u; g_coast_y = 0u;
