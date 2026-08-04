@@ -2323,6 +2323,24 @@ static u16     g_row_map[32];
    there cannot be flown - without telemetry the ship position is unknown
    and the ship wedges itself against the terrain. Set to 0 for release. */
 #define WCRAWL_TEST 0
+/* ===== SHOP_TEST: 1 = go into the shop straight from the game start,
+   with SHOP_TEST_CASH in the purse. Set to 0 for release.
+
+   Reaching the shop normally costs a good two minutes of flying: the first
+   trigger sits far into the level, and the money for anything beyond the
+   cheapest article has to be collected on the way. That is too expensive
+   for a look at the colours or a check of the mount rules, which is why
+   both used to be examined from the outside - and an article that the shop
+   refuses to sell looks exactly like one that is simply not in the list.
+
+   Deliberately goes through g_shop_delay rather than setting STATE_SHOP:
+   the state then arises on the SAME path as in the game (shop_delay_tick
+   remembers the return row, shop_enter draws, the second A switches the
+   VRAM segment). A state written past its own path is not the state under
+   test - see the energy bar, which stayed unchanged because
+   bar_set_energy() never ran. */
+#define SHOP_TEST 0
+#define SHOP_TEST_CASH 20000u
 #define BENCH_META_N 7u
 #if BENCH_META
 #define WARP_CHECKPOINT 7   /* boss arena = scroll end */
@@ -11878,6 +11896,19 @@ static void game_start(void) {
     g_shop_entered = 0u;
     { u8 st; for (st = 0u; st < (u8)LVL_SHOP_TRIGGER_COUNT; st++) g_shop_fired[st] = 0u; }
     g_shop_delay   = 0u;
+#if SHOP_TEST
+    /* Test aid: into the shop right away, with money. Only on the FIRST
+       game_start() - otherwise leaving the shop lands straight back in it
+       and the level is never seen (the same trap the warp fell into). The
+       static gets its value assigned here rather than relying on the
+       initialiser: RAM is not cleared at power-on, and a switch that
+       silently does nothing is worse than none at all. */
+    { static u8 shop_test_done;
+      if (shop_test_done != 1u) { shop_test_done = 1u;
+          g_cash = (u32)SHOP_TEST_CASH;
+          g_shop_delay = 30u;   /* a few frames of play first, so the entry is the normal one */
+      } }
+#endif
     g_checkpoint = 0u; g_checkpoint_seen = 0u; g_respawn_pending = 0u;
     g_sbomb_flash = 0u;   /* no leftover flashing across a restart */
     /* Set the loadout snapshot to the starting state, so dying before the
