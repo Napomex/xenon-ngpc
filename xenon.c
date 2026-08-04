@@ -1837,17 +1837,58 @@ static u8 wp_power_add(u8 w, u8 delta) {
     return 1u;
 }
 
+/* ---- How many copies of a weapon are mounted ----    !! A BITMASK CANNOT
+   COUNT. weapons_active has one bit per weapon, so "two cannons" is not
+   expressible in it - which is why a re-collected side weapon used to do
+   nothing at all. In the original a side weapon takes ANOTHER free
+   position of its group instead of powering up, and only once all four are
+   taken is the pickup a no-op (weapons.md sec.1, installer 1000:3117 /
+   100e). Front and tail groups have ONE position each, so there a
+   re-collect can only raise the power - see wp_group_places().
+   The bitmask stays and stays in step (bit set == copies > 0), so
+   everything that only asks "is this weapon aboard" is unchanged. */
+static u8 g_wp_copies[LVL_WEAPON_COUNT];
+
+static u8 wp_copies(u8 w) {
+    return (w < (u8)LVL_WEAPON_COUNT) ? g_wp_copies[w] : 0u;
+}
+
+/* !! THE MASK IS STILL WRITTEN DIRECTLY IN FOUR PLACES, AND THAT IS FINE.
+   START_WEAPONS, the benchmark loadout, the Nashwan kit and the checkpoint
+   restore all assign weapons_active as a whole; making each of them count
+   copies would mean four places to forget. So the count is reconciled with
+   the mask before it is used instead: a set bit with no copy gets one, a
+   cleared bit loses them all. A weapon that really carries several keeps
+   them, because its count is already above zero.
+   Returns 1 if anything moved, so the caller can redistribute. */
+static u8 wp_copies_sync_mask(void) {
+    u8 w, ab = 0u;
+    for (w = 0u; w < (u8)LVL_WEAPON_COUNT; w++) {
+        u8 an = (u8)((g_player.weapons_active & ((u16)1u << w)) ? 1u : 0u);
+        if (an && g_wp_copies[w] == 0u)  { g_wp_copies[w] = 1u; ab = 1u; }
+        if (!an && g_wp_copies[w] != 0u) { g_wp_copies[w] = 0u; ab = 1u; }
+    }
+    return ab;
+}
+
 #ifdef LVL_MOUNT_COUNT
-static u8  g_wp_mount[LVL_WEAPON_COUNT];   /* Platz je Waffe, 0xFF = keiner */
+static u8  g_wp_mount[LVL_WEAPON_COUNT];   /* FIRST position of the weapon, 0xFF = none */
+static u8  g_mount_wp[LVL_MOUNT_COUNT];    /* weapon at this position, 0xFF = free */
 static u16 g_wp_mount_for;                 /* the weapons_active it holds for */
+static u8  g_wp_mount_gen, g_wp_mount_seen;  /* copies can change without the bitmask changing */
 static u8  g_wp_mount_done;
 
 /* Redistribute. Order = weapon index; that is the only stable one we have
    (the original hands out by installation order, which we do not record). */
 static void wp_mounts_assign(void) {
     u8 belegt[LVL_MOUNT_COUNT];
+    u8 vorher[LVL_MOUNT_COUNT];   /* the distribution as it stood */
+    u8 platz[LVL_WEAPON_COUNT];   /* positions handed out so far, per weapon */
     u8 w, m;
-    for (m = 0u; m < (u8)LVL_MOUNT_COUNT; m++) belegt[m] = 0u;
+    for (m = 0u; m < (u8)LVL_MOUNT_COUNT; m++) {
+        vorher[m] = g_mount_wp[m]; belegt[m] = 0u; g_mount_wp[m] = 0xFFu;
+    }
+    for (w = 0u; w < (u8)LVL_WEAPON_COUNT; w++) platz[w] = 0u;
     /* !! WHOEVER IS ALREADY MOUNTED STAYS WHERE THEY ARE. The first
        attempt redistributed EVERYTHING on every change, in weapon-number
        order - so a long-mounted weapon jumped sideways as soon as one with
@@ -1857,26 +1898,39 @@ static void wp_mounts_assign(void) {
        to the NEW weapon and does not touch the existing ones. So two
        passes: hold the existing assignments first, then place only the new
        ones. */
-    for (w = 0u; w < (u8)LVL_WEAPON_COUNT; w++) {
-        u8 alt = g_wp_mount[w];
-        if (!(g_player.weapons_active & ((u16)1u << w))) { g_wp_mount[w] = 0xFFu; continue; }
-        if (alt < (u8)LVL_MOUNT_COUNT && !belegt[alt] &&
-            lvl_mount_group[alt] == lvl_weapon_mount_slot[w]) {
-            belegt[alt] = 1u;            /* behaelt seinen Platz */
-        } else {
-            g_wp_mount[w] = 0xFFu;       /* new, or the position no longer fits */
-        }
+    /* Pass 1: everyone who already sits somewhere that still fits keeps it.
+       Their positions are read out of g_mount_wp, which survives from the
+       last distribution - g_wp_mount[w] only remembers the FIRST one and
+       would drop every further copy. */
+    for (m = 0u; m < (u8)LVL_MOUNT_COUNT; m++) {
+        u8 alt = vorher[m];
+        if (alt >= (u8)LVL_WEAPON_COUNT) continue;
+        if (!(g_player.weapons_active & ((u16)1u << alt))) continue;
+        if (lvl_mount_group[m] != lvl_weapon_mount_slot[alt]) continue;
+        if (platz[alt] >= g_wp_copies[alt]) continue;   /* already has all its copies */
+        belegt[m] = 1u; g_mount_wp[m] = alt; platz[alt]++;
     }
+    /* Pass 2: hand out what is still missing, first free position first. */
     for (w = 0u; w < (u8)LVL_WEAPON_COUNT; w++) {
         if (!(g_player.weapons_active & ((u16)1u << w))) continue;
-        if (g_wp_mount[w] != 0xFFu) continue;
-        for (m = 0u; m < (u8)LVL_MOUNT_COUNT; m++) {
-            if (belegt[m]) continue;
-            if (lvl_mount_group[m] != lvl_weapon_mount_slot[w]) continue;
-            belegt[m] = 1u; g_wp_mount[w] = m; break;
+        while (platz[w] < g_wp_copies[w]) {
+            for (m = 0u; m < (u8)LVL_MOUNT_COUNT; m++) {
+                if (belegt[m]) continue;
+                if (lvl_mount_group[m] != lvl_weapon_mount_slot[w]) continue;
+                belegt[m] = 1u; g_mount_wp[m] = w; platz[w]++; break;
+            }
+            if (m >= (u8)LVL_MOUNT_COUNT) break;   /* group full - the rest stay unplaced */
         }
     }
-    g_wp_mount_for = g_player.weapons_active;
+    /* g_wp_mount[w] = the FIRST position, for everything that only draws or
+       fires one module (rear gun, beam muzzle, fallback offsets). */
+    for (w = 0u; w < (u8)LVL_WEAPON_COUNT; w++) g_wp_mount[w] = 0xFFu;
+    for (m = 0u; m < (u8)LVL_MOUNT_COUNT; m++) {
+        u8 ww = g_mount_wp[m];
+        if (ww < (u8)LVL_WEAPON_COUNT && g_wp_mount[ww] == 0xFFu) g_wp_mount[ww] = m;
+    }
+    g_wp_mount_for  = g_player.weapons_active;
+    g_wp_mount_seen = g_wp_mount_gen;
     g_wp_mount_done = 1u;
 }
 
@@ -1884,11 +1938,129 @@ static void wp_mounts_assign(void) {
    every caller of wpx_dx/dy should find it correct without a call being
    hung on each buy, pickup and respawn site - there are too many of those,
    and a forgotten one only shows up in the picture. */
+/* !! THE BITMASK IS NO LONGER ENOUGH AS A TRIGGER. A second cannon changes
+   g_wp_copies without changing a single bit of weapons_active, so a
+   distribution hung on the mask alone would never notice. Every place that
+   changes a copy count bumps g_wp_mount_gen. */
 static void wp_mounts_sync(void) {
-    if (!g_wp_mount_done || g_wp_mount_for != g_player.weapons_active)
+    if (wp_copies_sync_mask()) g_wp_mount_gen++;
+    if (!g_wp_mount_done || g_wp_mount_for != g_player.weapons_active
+        || g_wp_mount_seen != g_wp_mount_gen)
         wp_mounts_assign();
 }
+
+/* Position of the k-th copy, 0xFF if there is none. */
+static u8 wp_mount_at(u8 w, u8 k) {
+    u8 m, n = 0u;
+    wp_mounts_sync();
+    for (m = 0u; m < (u8)LVL_MOUNT_COUNT; m++) {
+        if (g_mount_wp[m] != w) continue;
+        if (n == k) return m;
+        n++;
+    }
+    return 0xFFu;
+}
+
+/* How many positions the weapon really occupies. Can be less than
+   g_wp_copies if the group is fuller than the tool has places for. */
+static u8 wp_mounts_used(u8 w) {
+    u8 m, n = 0u;
+    wp_mounts_sync();
+    for (m = 0u; m < (u8)LVL_MOUNT_COUNT; m++) if (g_mount_wp[m] == w) n++;
+    return n;
+}
 #endif
+
+/* !! THESE THREE BELONG UP HERE, NOT DOWN IN THE SHOP. wp_mount_more() is
+   called by apply_pickup() long before the shop code, and C89 then assumes
+   an implicit int - the build stayed silent and the game did not start.
+   They sit with the mount table they work on. */
+/* How many positions the weapon's group has. THE NUMBER IS WHAT SEPARATES
+   A SIDE WEAPON FROM A FRONT OR TAIL ONE, and it comes out of the data
+   rather than out of a hardwired group number: in the original the side
+   group has FOUR positions and front and tail one each (weapons.md sec.1,
+   DS:0x9134). That difference is the whole reason the two behave
+   differently - with several positions a second copy can be mounted, with
+   one there is nowhere to put it and only the power can grow. 0 = the
+   group has no position at all yet (the tool has not placed it). */
+static u8 wp_group_places(u8 w) {
+#ifdef LVL_MOUNT_COUNT
+    u8 want, m, n = 0u;
+    if (w >= (u8)LVL_WEAPON_COUNT) return 0u;
+    want = lvl_weapon_mount_slot[w];
+    if (want == 0u) return 0u;
+    for (m = 0u; m < (u8)LVL_MOUNT_COUNT; m++)
+        if (lvl_mount_group[m] == want) n++;
+    return n;
+#else
+    (void)w; return 0u;
+#endif
+}
+
+/* Mount ONE more copy. Returns 1 if anything happened.
+   The rule from the original, and it falls out of the number of positions:
+   with SEVERAL positions in the group (the side group has four) another
+   copy goes on; with ONE (front, tail) there is nowhere to put it and the
+   power grows instead; with NONE placed by the tool yet the old rule holds -
+   one weapon per group, no second copy. Nothing at all is also an answer:
+   with every side position taken the original's pickup is a no-op, without
+   evicting anyone and without a power-up. */
+/* How many positions of this weapon's group are already taken - by EVERY
+   weapon of the group, counting copies. */
+static u8 wp_group_taken(u8 w) {
+#ifdef LVL_MOUNT_COUNT
+    u8 g, k, n = 0u;
+    if (w >= (u8)LVL_WEAPON_COUNT) return 0u;
+    g = lvl_weapon_mount_slot[w];
+    for (k = 0u; k < (u8)LVL_WEAPON_COUNT; k++)
+        if (lvl_weapon_mount_slot[k] == g) n = (u8)(n + g_wp_copies[k]);
+    return n;
+#else
+    (void)w; return 0u;
+#endif
+}
+
+static u8 wp_mount_more(u8 w) {
+    u8 platz;
+    if (w >= (u8)LVL_WEAPON_COUNT) return 0u;
+    platz = wp_group_places(w);
+    if (g_wp_copies[w] == 0u) {                    /* first copy: just fit it */
+        /* Even the first one needs a free position once the group is
+           shared - the side group has four and the laser already sits in
+           one of them. */
+        if (platz > 0u && wp_group_taken(w) >= platz) return 0u;
+        g_wp_copies[w] = 1u;
+        g_player.weapons_active |= (u16)((u16)1u << w);
+#ifdef LVL_MOUNT_COUNT
+        g_wp_mount_gen++;
+#endif
+        return 1u;
+    }
+    if (platz <= 1u) return 0u;                    /* one position or none -> power, see the caller */
+    /* !! FREE POSITIONS, NOT THE GROUP'S TOTAL. Counting only this
+       weapon's own copies against the group size let it claim four while
+       the laser held one of them - measured: 4 copies on 3 positions. The
+       original scans for the first FREE slot and the pickup is a no-op
+       when there is none. */
+    if (wp_group_taken(w) >= platz) return 0u;     /* group full -> no-op, as in the original */
+    g_wp_copies[w]++;
+#ifdef LVL_MOUNT_COUNT
+    g_wp_mount_gen++;
+#endif
+    return 1u;
+}
+
+/* Take the whole weapon off (the shop sells all copies at once - the
+   catalogue has one line per weapon, not per copy). */
+static void wp_unmount(u8 w) {
+    if (w >= (u8)LVL_WEAPON_COUNT) return;
+    g_wp_copies[w] = 0u;
+    g_player.weapons_active &= (u16)(~((u16)1u << w));
+#ifdef LVL_MOUNT_COUNT
+    g_wp_mount_gen++;
+#endif
+}
+
 
 static s8 wpx_dx(u8 w) {
 #ifdef LVL_MOUNT_COUNT
@@ -1914,9 +2086,33 @@ static s8 wpx_dy(u8 w) {
     }
     return lvl_weapon_dy[w];
 }
-static u8      g_wpx_oam[LVL_WEAPON_COUNT][WPX_CELLS][2];
-static u16     g_wpx_last[LVL_WEAPON_COUNT][WPX_CELLS];
-static u8      g_wpx_n[LVL_WEAPON_COUNT];          /* cell count last taken */
+/* ---- Module sprites: indexed by DRAWING SLOT, not by weapon ----
+   A weapon can sit in several positions (see wp_mount_more), and each copy
+   needs its own OAM slots and its own frame cache. The slot index is the
+   MOUNT for a weapon that has one, so several copies never collide; a
+   weapon the tool has not placed anywhere keeps a slot of its own behind
+   the mount positions, so the fallback offsets still draw something.
+   !! ONE SLOT PER MOUNT POSITION, AND NOT ONE MORE. The first version
+   added a spare slot per weapon so that a weapon the tool has not placed
+   anywhere would still draw at its fallback offset - 17 slots instead of
+   11. THE GAME THEN HUNG BEFORE THE TITLE, white screen, no scroll. The
+   free bytes above the last variable ARE THE STACK (tools/probe_stack.py:
+   "at 307 the game hangs"), and the extra fields left 66. Costing a hard
+   hang for a case that does not exist is the wrong trade: every weapon
+   that actually carries a module sprite today has a mount position, and a
+   weapon without one now simply draws no module - visible and
+   diagnosable, unlike a white screen.
+   6 slots against 11 before, so this SAVES about 80 bytes. Check
+   xenon.map after any change here. */
+#ifdef LVL_MOUNT_COUNT
+#define WPX_SLOTS ((u8)LVL_MOUNT_COUNT)
+#else
+#define WPX_SLOTS ((u8)LVL_WEAPON_COUNT)
+#endif
+static u8      g_wpx_oam[WPX_SLOTS][WPX_CELLS][2];
+static u16     g_wpx_last[WPX_SLOTS][WPX_CELLS];
+static u8      g_wpx_n[WPX_SLOTS];                 /* cell count last taken */
+static u8      g_wpx_benutzt[WPX_SLOTS];           /* drawn this frame? see the release sweep */
 /* Precomputed per weapon, because lvl_weapon_spr[w] is constant: the index
    into the metaanim list and the anim divider. Both used to be re-derived
    EVERY FRAME - a linear search over LVL_METAANIM_COUNT plus a division.
@@ -2074,6 +2270,7 @@ static u32 g_cp_cash;
 static u16 g_cp_weapons;
 static u8  g_cp_power;
 static u8  g_cp_wp_power[LVL_WEAPON_COUNT];   /* power per weapon at the checkpoint */
+static u8  g_cp_wp_copies[LVL_WEAPON_COUNT]; /* mounted copies at the checkpoint */
 
 /* During the boss cash rain the player is invulnerable. Greater than 0
    while rain tokens are still outstanding. */
@@ -5306,8 +5503,9 @@ static void scroll_update(void) {
                                Without it a death threw away every stage
                                collected since the level start while the
                                weapons themselves came back. */
-                            { u8 cw; for (cw = 0u; cw < (u8)LVL_WEAPON_COUNT; cw++)
-                                  g_cp_wp_power[cw] = g_wp_power[cw]; }
+                            { u8 cw; for (cw = 0u; cw < (u8)LVL_WEAPON_COUNT; cw++) {
+                                  g_cp_wp_power[cw]  = g_wp_power[cw];
+                                  g_cp_wp_copies[cw] = g_wp_copies[cw]; } }
                         }
                     }
                 }
@@ -5389,6 +5587,7 @@ static void player_init(void) {
        cleared at power-on, and a laser that starts at power 2 by accident
        would be a hard fault to explain. */
     for (w = 0u; w < (u8)LVL_WEAPON_COUNT; w++) g_wp_power[w] = 0u;
+    for (w = 0u; w < (u8)LVL_WEAPON_COUNT; w++) g_wp_copies[w] = 0u;
     for (w = 0u; w < (u8)LVL_WEAPON_COUNT; w++) g_player.weapon_cooldown[w] = 0u;
 }
 
@@ -9347,13 +9546,14 @@ static void apply_pickup(u8 kind, u16 value) {
                   (void)wp_power_add(pw, (u8)value); }
         break;
     case 3:
-        /* Already carried -> the weapon gets STRONGER instead of the bit
-           being set a second time (weapons.md sec.1). Before this a
-           re-collect did literally nothing. */
-        if (g_player.weapons_active & ((u16)1u << value))
+        /* !! ANOTHER COPY FIRST, POWER ONLY IF THERE IS NOWHERE TO PUT ONE.
+           That is the original's split and it falls out of the number of
+           positions: a side weapon has four, so a re-collect mounts a
+           SECOND cannon; front and tail have one, so there the same pickup
+           raises the power (weapons.md sec.1). Before 04.08. a re-collect
+           set an already set bit and did nothing at all. */
+        if (!wp_mount_more((u8)value))
             (void)wp_power_add((u8)value, 1u);
-        else
-            g_player.weapons_active |= (u16)((u16)1u << value);
         break;
     case 4:  /* Speedup (DOS pickup type 0, "S"): ship speed up by value stages, capped */
         g_player.speed_stage = (u8)(g_player.speed_stage + value);
@@ -9511,15 +9711,28 @@ static u8 wp_nearest_enemy(s16 cx, s16 cy, s16 *ox, s16 *oy) {
 
 /* Queue a module shot of weapon i with initial velocity (vx,vy). The start
    position is ship plus weapon offset; OAM comes only when drawing. */
-static void wp_spawn(u8 i, s16 vx, s16 vy) {
+/* ONE shot from the k-th copy's muzzle. wp_spawn() below fires every copy,
+   which is what a second cannon is FOR - in the original two mounted
+   cannons put out two shots, they do not make one stronger. */
+static void wp_spawn_at(u8 i, u8 kop, s16 vx, s16 vy) {
     u8 b;
+    s8 mdx, mdy;
+#ifdef LVL_MOUNT_COUNT
+    u8 mm = wp_mount_at(i, kop);
+    if (mm != 0xFFu) {
+        mdx = (s8)(lvl_mount_dx[mm] - lvl_weapon_anchor_dx[i]);
+        mdy = (s8)(lvl_mount_dy[mm] - lvl_weapon_anchor_dy[i]);
+    } else { mdx = wpx_dx(i); mdy = wpx_dy(i); }
+#else
+    (void)kop; mdx = wpx_dx(i); mdy = wpx_dy(i);
+#endif
     for (b = 0u; b < (u8)MAX_WPBULLETS; b++) {
         if (g_wp_bullets[b].active) continue;
         g_wp_bullets[b].active = 1u;
         g_busy_wpbul = 1u;   /* early-out: see g_busy_* */
         /* muzzle = module position plus its own offset (see WPX_MUZZLE_*). */
-        g_wp_bullets[b].x_fix  = (s16)(((s16)g_player.x + wpx_dx(i) + WPX_MUZZLE_DX(i)) << 4);
-        g_wp_bullets[b].y_fix  = (s16)(((s16)g_player.y + wpx_dy(i) + WPX_MUZZLE_DY(i)) << 4);
+        g_wp_bullets[b].x_fix  = (s16)(((s16)g_player.x + mdx + WPX_MUZZLE_DX(i)) << 4);
+        g_wp_bullets[b].y_fix  = (s16)(((s16)g_player.y + mdy + WPX_MUZZLE_DY(i)) << 4);
         g_wp_bullets[b].oam    = OAM_NONE;
         g_wp_bullets[b].w      = i;
         g_wp_bullets[b].vx     = vx;
@@ -9527,6 +9740,20 @@ static void wp_spawn(u8 i, s16 vx, s16 vy) {
         g_wp_bullets[b].last_snum = 0u;
         return;
     }
+}
+
+/* Fire EVERY mounted copy. The pool (MAX_WPBULLETS) is the natural limit -
+   with it full the further copies simply find no slot, which is the same
+   thing that already happens when the player mashes the button. */
+static void wp_spawn(u8 i, s16 vx, s16 vy) {
+    u8 kop, kopien;
+#ifdef LVL_MOUNT_COUNT
+    kopien = wp_mounts_used(i);
+    if (kopien == 0u) kopien = 1u;
+#else
+    kopien = 1u;
+#endif
+    for (kop = 0u; kop < kopien; kop++) wp_spawn_at(i, kop, vx, vy);
 }
 
 /* --- BOMB: lobbed upwards, timed fuse, area blast ---    The original
@@ -11181,7 +11408,12 @@ static void draw_sprites(void) {
            Before, the complete body ran for all ten weapons - stack setup
            for four fields, release loop, draw loop - although at most two
            are active. */
-        if (!(g_player.weapons_active & ((u16)1u << w)) && g_wpx_n[w] == 0u) continue;
+        /* !! NOT g_wpx_n[w] ANY MORE - the array is indexed by DRAWING
+           SLOT, and a weapon can hold several. An inactive weapon is
+           simply skipped here; its slots are released by the sweep after
+           the loop, which is the only place that still knows which slots
+           carry cells nobody claimed this frame. */
+        if (!(g_player.weapons_active & ((u16)1u << w))) continue;
         if ((g_player.weapons_active & ((u16)1u << w)) && spr != 0u) {
             u16 n = (u16)(spr & 0x01FFu);
             if (spr & 0x1000u) {                 /* metasprite or metaanim */
@@ -11278,45 +11510,94 @@ static void draw_sprites(void) {
             }
         }
 wpx_done:
-        /* release cells no longer needed (sold, a shorter frame, inactive) */
-        for (c = cnt; c < g_wpx_n[w]; c++) {
-            if (g_wpx_oam[w][c][0] != OAM_NONE) {
-                UnsetSprite(g_wpx_oam[w][c][0]); oam_pool_free(g_wpx_oam[w][c][0]);
-                g_wpx_oam[w][c][0] = OAM_NONE;
+        /* !! ONCE PER COPY, NOT ONCE PER WEAPON. A side weapon can sit in
+           several positions (wp_mount_more), and every copy is its own
+           module with its own OAM slots. The picture above - frames, cells,
+           mirroring - is the same for all of them, so it is computed once
+           outside this loop; only the position and the slots differ.
+           kopien is at least 1: a weapon the tool has not placed anywhere
+           still draws once, at the fallback offset, on its own slot behind
+           the mount positions. */
+        { u8 kop, kopien;
+#ifdef LVL_MOUNT_COUNT
+          kopien = wp_mounts_used(w);
+          if (kopien == 0u) kopien = 1u;
+#else
+          kopien = 1u;
+#endif
+          for (kop = 0u; kop < kopien; kop++) {
+            u8 ws;
+#ifdef LVL_MOUNT_COUNT
+            u8 mm = wp_mount_at(w, kop);
+            if (mm == 0xFFu) continue;   /* no position -> no module, see WPX_SLOTS */
+            ws = mm;
+            bx = (s8)(lvl_mount_dx[mm] - lvl_weapon_anchor_dx[w]);
+            by = (s8)(lvl_mount_dy[mm] - lvl_weapon_anchor_dy[w]);
+#else
+            ws = w; bx = wpx_dx(w); by = wpx_dy(w);
+#endif
+            /* release cells no longer needed (sold, a shorter frame, inactive) */
+            for (c = cnt; c < g_wpx_n[ws]; c++) {
+                if (g_wpx_oam[ws][c][0] != OAM_NONE) {
+                    UnsetSprite(g_wpx_oam[ws][c][0]); oam_pool_free(g_wpx_oam[ws][c][0]);
+                    g_wpx_oam[ws][c][0] = OAM_NONE;
+                }
+                if (g_wpx_oam[ws][c][1] != OAM_NONE) {
+                    UnsetSprite(g_wpx_oam[ws][c][1]); oam_pool_free(g_wpx_oam[ws][c][1]);
+                    g_wpx_oam[ws][c][1] = OAM_NONE;
+                }
+                g_wpx_last[ws][c] = 0u;
             }
-            if (g_wpx_oam[w][c][1] != OAM_NONE) {
-                UnsetSprite(g_wpx_oam[w][c][1]); oam_pool_free(g_wpx_oam[w][c][1]);
-                g_wpx_oam[w][c][1] = OAM_NONE;
+            g_wpx_n[ws] = cnt;
+            g_wpx_benutzt[ws] = 1u;   /* claimed this frame, see the sweep below */
+            for (c = 0u; c < cnt; c++) {
+                u8 wx = (u8)(g_player.x + bx + c_dx[c]);
+                u8 wy = (u8)(g_player.y + by + c_dy[c]);
+                if (g_wpx_oam[ws][c][0] == OAM_NONE) {
+                    g_wpx_oam[ws][c][0] = oam_pool_alloc_p(OAM_PRIO_SHOT);
+                    if (g_wpx_oam[ws][c][0] == OAM_NONE) continue;      /* pool empty */
+                    g_wpx_oam[ws][c][1] = oam_pool_alloc_p(OAM_PRIO_SHOT);
+                    if (g_wpx_oam[ws][c][1] == OAM_NONE) {
+                        oam_pool_free(g_wpx_oam[ws][c][0]); g_wpx_oam[ws][c][0] = OAM_NONE; continue;
+                    }
+                    g_wpx_last[ws][c] = 0u;
+                }
+                if (s_num[c] == g_wpx_last[ws][c]) {       /* same frame -> position only */
+                    SetSpritePosition(g_wpx_oam[ws][c][0], wx, wy);
+                    SetSpritePosition(g_wpx_oam[ws][c][1], wx, wy);
+                } else {
+                    spr_draw_s2(g_wpx_oam[ws][c][0], g_wpx_oam[ws][c][1], s_num[c], wx, wy);
+                    if (c_fl[c]) {                       /* mirrored cell */
+                        u8 fm = META_FLIP_MASK(c_fl[c]);
+                        SpriteControl(g_wpx_oam[ws][c][0], SPR_FRONT, fm);
+                        SpriteControl(g_wpx_oam[ws][c][1], SPR_FRONT, fm);
+                    }
+                    g_wpx_last[ws][c] = s_num[c];
+                }
             }
-            g_wpx_last[w][c] = 0u;
+          }
+
         }
-        g_wpx_n[w] = cnt;
-        /* Depend only on w, but stood as a far call inside the cell loop. */
-        bx = wpx_dx(w); by = wpx_dy(w);
-        for (c = 0u; c < cnt; c++) {
-            u8 wx = (u8)(g_player.x + bx + c_dx[c]);
-            u8 wy = (u8)(g_player.y + by + c_dy[c]);
-            if (g_wpx_oam[w][c][0] == OAM_NONE) {
-                g_wpx_oam[w][c][0] = oam_pool_alloc_p(OAM_PRIO_SHOT);
-                if (g_wpx_oam[w][c][0] == OAM_NONE) continue;      /* pool empty */
-                g_wpx_oam[w][c][1] = oam_pool_alloc_p(OAM_PRIO_SHOT);
-                if (g_wpx_oam[w][c][1] == OAM_NONE) {
-                    oam_pool_free(g_wpx_oam[w][c][0]); g_wpx_oam[w][c][0] = OAM_NONE; continue;
-                }
-                g_wpx_last[w][c] = 0u;
+      }
+      /* Release every drawing slot that nobody claimed this frame - a sold
+         weapon, a copy that lost its position, a group the tool emptied.
+         Cheap: WPX_SLOTS is 17 and almost all of them carry no cells. */
+      { u8 ws2, c2;
+        for (ws2 = 0u; ws2 < (u8)WPX_SLOTS; ws2++) {
+          if (g_wpx_benutzt[ws2]) { g_wpx_benutzt[ws2] = 0u; continue; }
+          if (g_wpx_n[ws2] == 0u) continue;
+          for (c2 = 0u; c2 < g_wpx_n[ws2]; c2++) {
+            if (g_wpx_oam[ws2][c2][0] != OAM_NONE) {
+                UnsetSprite(g_wpx_oam[ws2][c2][0]); oam_pool_free(g_wpx_oam[ws2][c2][0]);
+                g_wpx_oam[ws2][c2][0] = OAM_NONE;
             }
-            if (s_num[c] == g_wpx_last[w][c]) {       /* same frame -> position only */
-                SetSpritePosition(g_wpx_oam[w][c][0], wx, wy);
-                SetSpritePosition(g_wpx_oam[w][c][1], wx, wy);
-            } else {
-                spr_draw_s2(g_wpx_oam[w][c][0], g_wpx_oam[w][c][1], s_num[c], wx, wy);
-                if (c_fl[c]) {                       /* mirrored cell */
-                    u8 fm = META_FLIP_MASK(c_fl[c]);
-                    SpriteControl(g_wpx_oam[w][c][0], SPR_FRONT, fm);
-                    SpriteControl(g_wpx_oam[w][c][1], SPR_FRONT, fm);
-                }
-                g_wpx_last[w][c] = s_num[c];
+            if (g_wpx_oam[ws2][c2][1] != OAM_NONE) {
+                UnsetSprite(g_wpx_oam[ws2][c2][1]); oam_pool_free(g_wpx_oam[ws2][c2][1]);
+                g_wpx_oam[ws2][c2][1] = OAM_NONE;
             }
+            g_wpx_last[ws2][c2] = 0u;
+          }
+          g_wpx_n[ws2] = 0u;
         }
       }
     }
@@ -12191,7 +12472,8 @@ static void game_start(void) {
     /* Set the loadout snapshot to the starting state, so dying before the
        first checkpoint falls back cleanly to the start of the level. */
     g_cp_cash = 0u; g_cp_weapons = g_player.weapons_active; g_cp_power = 0u;
-    { u8 cw; for (cw = 0u; cw < (u8)LVL_WEAPON_COUNT; cw++) g_cp_wp_power[cw] = g_wp_power[cw]; }
+    { u8 cw; for (cw = 0u; cw < (u8)LVL_WEAPON_COUNT; cw++) {
+          g_cp_wp_power[cw] = g_wp_power[cw]; g_cp_wp_copies[cw] = g_wp_copies[cw]; } }
     g_boss_rain = 0u; g_nashwan_timer = 0u;
     boss_reset();
     g_state      = STATE_PLAY;
@@ -12505,28 +12787,6 @@ static void shop_sel_draw(void) {
 
 /* Is anything mounted in this catalogue slot? (only weapons can be
    mounted) */
-/* How many positions the weapon's group has. THE NUMBER IS WHAT SEPARATES
-   A SIDE WEAPON FROM A FRONT OR TAIL ONE, and it comes out of the data
-   rather than out of a hardwired group number: in the original the side
-   group has FOUR positions and front and tail one each (weapons.md sec.1,
-   DS:0x9134). That difference is the whole reason the two behave
-   differently - with several positions a second copy can be mounted, with
-   one there is nowhere to put it and only the power can grow. 0 = the
-   group has no position at all yet (the tool has not placed it). */
-static u8 wp_group_places(u8 w) {
-#ifdef LVL_MOUNT_COUNT
-    u8 want, m, n = 0u;
-    if (w >= (u8)LVL_WEAPON_COUNT) return 0u;
-    want = lvl_weapon_mount_slot[w];
-    if (want == 0u) return 0u;
-    for (m = 0u; m < (u8)LVL_MOUNT_COUNT; m++)
-        if (lvl_mount_group[m] == want) n++;
-    return n;
-#else
-    (void)w; return 0u;
-#endif
-}
-
 /* May this article be bought AGAIN, as a power-up? In the original that is
    what a re-buy of a front or tail weapon is: "the SAME item id mounted
    below its cap (re-buy = power-up)", while a SIDE item is only in stock
@@ -12949,10 +13209,13 @@ static u8 shop_slot_free(u8 idx) {
         u8 plaetze = 0u, belegt = 0u, m;
         for (m = 0u; m < (u8)LVL_MOUNT_COUNT; m++)
             if (lvl_mount_group[m] == want) plaetze++;
+        /* COPIES, not weapons: since a side weapon can sit in several
+           positions, counting one per weapon would report the group as
+           emptier than it is. The article's own weapon is left out - the
+           question is whether ANOTHER copy fits. */
         for (w = 0u; w < (u8)LVL_WEAPON_COUNT; w++) {
-            if (!(g_player.weapons_active & ((u16)1u << w))) continue;
             if (w == (u8)lvl_shop_ref[idx]) continue;
-            if (lvl_weapon_mount_slot[w] == want) belegt++;
+            if (lvl_weapon_mount_slot[w] == want) belegt = (u8)(belegt + g_wp_copies[w]);
         }
         /* !! A GROUP WITHOUT POSITIONS MUST NOT BLOCK EVERYTHING. The
            mount table so far describes only side, front and tail; the
@@ -13014,9 +13277,13 @@ static u8 shop_do_buy(u8 idx) {
         if (shop_rebuy_powers(idx)) {
             (void)wp_power_add((u8)lvl_shop_ref[idx], 1u);
         } else {
-            if (shop_item_owned(idx)) { shop_text_draw(lvl_shop_txt_no_room); return 0u; }
             if (!shop_slot_free(idx)) { shop_text_draw(lvl_shop_txt_no_room); return 0u; }
-            g_player.weapons_active |= (u16)((u16)1u << lvl_shop_ref[idx]);
+            /* Another copy, exactly as the pickup does it. Fails only when
+               the group is really full - and shop_slot_free() has already
+               said it is not. */
+            if (!wp_mount_more((u8)lvl_shop_ref[idx])) {
+                shop_text_draw(lvl_shop_txt_no_room); return 0u;
+            }
         }
     } else if (t == 1u) {
         /* firerate_stage used to run up UNCAPPED here. Beyond the last
@@ -13062,7 +13329,7 @@ static u8 shop_do_sell(u8 idx) {
     if (idx >= (u8)LVL_SHOP_COUNT) return 0u;
     val = shop_sell_value(idx);
     if (val == 0u) { shop_text_draw(lvl_shop_txt_out_of_stock); return 0u; }
-    g_player.weapons_active &= (u16)(~((u16)1u << lvl_shop_ref[idx]));
+    wp_unmount((u8)lvl_shop_ref[idx]);   /* every copy at once - one catalogue line per weapon */
     /* The power goes with the weapon. Left standing it would come back for
        free with the next copy - and it is already paid for in val above. */
     if ((u8)lvl_shop_ref[idx] < (u8)LVL_WEAPON_COUNT)
@@ -13409,8 +13676,12 @@ static void respawn_do(void) {
     g_cash                  = g_cp_cash;
     g_player.weapons_active = g_cp_weapons;
     g_player.power_stage    = g_cp_power;
-    { u8 rw; for (rw = 0u; rw < (u8)LVL_WEAPON_COUNT; rw++)
-          g_wp_power[rw] = g_cp_wp_power[rw]; }
+    { u8 rw; for (rw = 0u; rw < (u8)LVL_WEAPON_COUNT; rw++) {
+          g_wp_power[rw]  = g_cp_wp_power[rw];
+          g_wp_copies[rw] = g_cp_wp_copies[rw]; } }
+#ifdef LVL_MOUNT_COUNT
+    g_wp_mount_gen++;   /* the counts changed without the mask changing */
+#endif
     g_boss_rain             = 0u;   /* no rain window after a respawn */
     g_nashwan_timer         = 0u;   /* death ends Nashwan (the loadout falls back to the checkpoint state) */
     g_tilt_level = 0; g_coast_x = 0u; g_coast_y = 0u;
