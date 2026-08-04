@@ -3136,6 +3136,17 @@ static const u8  beam_weapon[BEAM_COUNT] = { 3u };
 /* The beam reaches from the muzzle to the top edge of the playfield. */
 #define BEAM_TOP_Y   8u
 #define BEAM_MAX_SEG 14u          /* Kopf + Mitte + Ende, Obergrenze */
+/* Width of the damage box. ONE TILE, because that is how wide the column is
+   drawn - see the "what you see is what hits" note on g_beam.top.
+   !! IN THE ORIGINAL THE WIDTH IS WHAT GROWS WITH POWER, NOT THE LENGTH:
+   the column mask words at DS:0x33be are ff00/fff0/ffff = 8/12/16 px, and
+   the damage box is 4p+8 px wide over a length that is always 0x41 rows
+   (weapons.md 1000:2439..245c). Here the stages vary the LENGTH instead
+   (beam_len 16/32/32) and every stage draws an 8 px column. The tool's
+   "Beams" tab already carries the three widths; once map.h exports them,
+   this constant and beam_len should both come from there, and the box
+   should follow the width rather than the length. */
+#define BEAM_HIT_W   8u
 
 /* !! THE LASER IS A PROJECTILE, NOT AN ATTACHED BEAM. The first version
    drew it fixed upward from the muzzle - it then stuck to the ship and
@@ -3150,6 +3161,12 @@ static struct {
     u8 on;       /* fliegt gerade einer? */
     u8 x, y;     /* Position des UNTEREN Endes */
     u8 stage;    /* stage, decides length and graphics */
+    /* Top edge of the column, written by beam_draw. WHAT YOU SEE IS WHAT
+       HITS: the collision box is the extent that was actually put on the
+       screen, so it cannot drift apart from the drawing. Recomputing it in
+       the collision would mean copying the clipping and the segment count -
+       and the first change to either would silently make the two disagree. */
+    u8 top;
 } g_beam;
 
 /* Flugtempo wie ein Spielerschuss: BULLET_SPEED px je Spielframe. */
@@ -3174,6 +3191,18 @@ static void beam_draw(u8 bi, u8 stage, u8 gun_x, u8 gun_y) {
        that is g_beam.x/y, not the muzzle. */
     u8 mh, seg, i, y, first;
     u16 mid, head;
+    /* !! GEOMETRY INVALID UNTIL SOMETHING IS ACTUALLY DRAWN. Every return
+       below leaves the beam invisible for this frame while beam_update()
+       keeps moving g_beam.y - and the collision box is built from
+       g_beam.top. Without this line that box would keep the edge of the
+       last successfully drawn frame and grow with every failed one:
+       measured, the box reached 108 px where the column is at most 48
+       (tools/probe_beam_damage.py). 0xFF is above every y, so
+       beam_collide's "top >= y" test throws the frame away.
+       THE FAILING CASE IS THE NORMAL ONE, not an edge case: the OAM pool
+       has about 7 free slots on average and the block needs 4 to 6, so
+       oam_pool_alloc_run() comes back empty regularly. */
+    g_beam.top = 0xFFu;
     if (bi >= (u8)BEAM_COUNT || stage >= (u8)BEAM_STAGES) return;
     mh   = beam_mid_h[bi][stage];
     if (mh < 4u) mh = 8u;
@@ -3215,6 +3244,7 @@ static void beam_draw(u8 bi, u8 stage, u8 gun_x, u8 gun_y) {
     }
     /* the head at the very top */
     spr_draw_s_single((u8)(g_beam.oam + 1u + seg), head, gun_x, (u8)(y - mh));
+    g_beam.top = (u8)(y - mh);
     g_beam.on = 1u;
 }
 
@@ -4388,6 +4418,13 @@ static u8 g_dmg_src;
 static u8 g_god;
 static u16 g_dbg_shots;   /* count of main gun shots fired (telemetry only) */
 static u16 g_dbg_area;    /* count of area damage hits (bomb/mine, telemetry only) */
+/* Count of targets the beam damaged (telemetry only). Its whole purpose is
+   provability: "the laser now does damage" is not something a screenshot
+   can show - the beam covers the enemy it is killing. The probe reads this
+   counter out of RAM and compares a run WITH the laser against one
+   WITHOUT, so a number that only ever goes up cannot be mistaken for a
+   working weapon (tools/probe_beam_damage.py). */
+static u16 g_dbg_beam;
 
 /* Energy display: five cells, 8 energy points each. !! THE DESIGN NUMBERS
    ARE NO LONGER FIXED IN THE CODE. They used to be 9 (full) and 2 (empty)
@@ -9472,6 +9509,154 @@ static void mine_update(void) {
 }
 
 // --- Collisions --
+/* ============ Beam weapon collision ============
+   The beam was drawn and flew, but did no damage at all - it went straight
+   through everything. This closes that.
+
+   IT SWEEPS AND IT PIERCES, both from the original: "Each tick it damages
+   EVERY enemy in its strip for (power+1)x3" (weapons.md on 1000:2439..245c,
+   sweep 1000:1c4f), and it is not consumed by doing so. So this does not
+   stop at the first target the way a bullet does - it damages everything it
+   overlaps, every collision frame, and keeps flying.
+
+   THE ONE THING THAT DOES STOP IT IS A BOSS SEGMENT. That is not from the
+   beam spec but from the house rule every other weapon here already
+   follows: the tentacle segments SWALLOW a shot, and even WPB_PIERCE shots
+   are consumed by them (see wp_bullets_update). Letting a beam through
+   would hand the player a way past the boss's own shield, which is a
+   balance change and not a port of anything.
+
+   NO SWEEP TERM NEEDED, and that is worth writing down because every other
+   projectile here needs one. A shot is an 8 px box moving 24 px per
+   collision frame, so it has to be stretched backwards or it tunnels
+   (BULLET_SWEEP). The beam IS its own path: the column is 32 px tall at
+   stage 0 and 48 at the higher ones, while it advances 12 px per frame -
+   24 px between checks with TEST_COLL_HALF. The box therefore always
+   overlaps its own previous position and nothing can slip between two
+   samples. The original arrives at the same place from the other side: its
+   box is 0x20 tall and it moves 0x20 per tick.
+
+   The y prefilter has to grow with the box. BULLET_YFILTER is chosen for an
+   8 px shot; measured against the CENTRE of a 48 px column, a target could
+   sit a further half height away and still overlap. Hence + h/2 - without
+   that the tall box would be quietly cropped back to the bullet's reach. */
+static void beam_collide(void) {
+    s16 bx, by, cy, filt;
+    u8  h, np, p, px, py, dmg, e, w, k;
+
+    /* Only while something is actually on screen. g_beam.on is already set
+       at the spawn in weapon_update(), a frame before beam_draw() first
+       runs, so on that frame g_beam.top still holds the previous beam's
+       edge. Hanging the test on the OAM block instead keeps box and picture
+       in step. */
+    if (!g_beam.on || g_beam.oam == OAM_NONE) return;
+    if (g_beam.top >= g_beam.y) return;    /* nothing drawn yet */
+
+    bx   = (s16)g_beam.x;
+    by   = (s16)g_beam.top;
+    h    = (u8)((u8)(g_beam.y + 8u) - g_beam.top);
+    cy   = (s16)(by + (s16)(h >> 1));
+    filt = (s16)((s16)BULLET_YFILTER + (s16)(h >> 1));
+    dmg  = wp_gun_damage(beam_weapon[0]);
+    px   = (u8)(g_beam.x + 4u);
+    /* Map objects and the boss are POINT tests, so the column has to be
+       sampled instead of handed over as a box. Every 8 px: that is the
+       height of a map object cell, and a coarser step would stride over
+       whole rows of them. */
+    np   = (u8)((u8)(h + 7u) >> 3);
+
+    /* Map objects: wilted, but the beam carries on. It cuts a whole column
+       of growths in one frame - which is exactly what "damages everything
+       in its strip" means. */
+    py = g_beam.top;
+    for (p = 0u; p < np; p++) {
+        u8 obj = mapobj_hit_test(px, py);
+        if (obj != (u8)MAPOBJ_NONE) { mapobj_wilt(obj); g_dbg_beam++; }
+        py = (u8)(py + 8u);
+    }
+
+    /* Boss: segments first, then the eye - same order as the shots use, so
+       a segment in front of the eye wins and swallows the beam. */
+    {
+        u8 seg = 0u, eye = 0u;
+        py = g_beam.top;
+        for (p = 0u; p < np; p++) {
+            if (boss_seg_hit(px, py)) { seg = 1u; break; }
+            py = (u8)(py + 8u);
+        }
+        if (!seg) {
+            py = g_beam.top;
+            for (p = 0u; p < np; p++) {
+                if (boss_eye_hit(px, py)) { eye = 1u; break; }
+                py = (u8)(py + 8u);
+            }
+        }
+        if (seg) { beam_hide(); return; }
+        if (eye) {
+            /* Consumed on the eye as well, unlike on ordinary enemies. A
+               beam that stayed alive would sit in the eye field and hit
+               once per frame for as long as it is held - the boss fight is
+               balanced against weapons that spend themselves on a hit. */
+            boss_take_damage(dmg);
+            g_dbg_beam++;
+            beam_hide();
+            return;
+        }
+    }
+
+    for (e = 0u; e < (u8)MAX_ENEMIES; e++) {
+        s16 dyv;
+        if (!g_enemies[e].active || g_enemies[e].y >= CLIP_Y) continue;
+        dyv = (s16)(cy - (s16)g_enemies[e].y);
+        if (dyv > filt || dyv < (s16)-filt) continue;
+        if (rects_overlap_cached(bx, by, (u8)BEAM_HIT_W, h,
+                                  g_enemies[e].x, g_enemies[e].y,
+                                  g_enemies[e].hz_dx, g_enemies[e].hz_dy,
+                                  g_enemies[e].hz_w, g_enemies[e].hz_h))
+            { enemy_take_damage(e, dmg); g_dbg_beam++; }
+    }
+
+    for (e = 0u; e < (u8)MAX_METAENEMIES; e++) {
+        s16 dyv;
+        if (!g_metaenemies[e].active || g_metaenemies[e].y >= CLIP_Y) continue;
+        dyv = (s16)(cy - (s16)g_metaenemies[e].y);
+        if (dyv > filt || dyv < (s16)-filt) continue;
+        if (rects_overlap_cached(bx, by, (u8)BEAM_HIT_W, h,
+                                  g_metaenemies[e].x, g_metaenemies[e].y,
+                                  g_metaenemies[e].hz_dx, g_metaenemies[e].hz_dy,
+                                  g_metaenemies[e].hz_w, g_metaenemies[e].hz_h))
+            { metaenemy_take_damage(e, dmg); g_dbg_beam++; }
+    }
+
+    for (w = 0u; w < (u8)MAX_WORMS; w++) {
+        if (!g_worms[w].active) continue;
+        /* BACKWARDS over the segments, as the smart bomb does: worm_seg_hit
+           may take a segment out and shift the rest down, and going
+           forwards would then test a freshly moved entry a second time. */
+        for (k = g_worms[w].num_segs; k > 0u; k--) {
+            u8  s = (u8)(k - 1u);
+            s16 dyv;
+            if (!g_worms[w].seg[s].alive || g_worms[w].seg[s].y >= CLIP_Y) continue;
+            dyv = (s16)(cy - (s16)g_worms[w].seg[s].y);
+            if (dyv > filt || dyv < (s16)-filt) continue;
+            if (rects_overlap_cached(bx, by, (u8)BEAM_HIT_W, h,
+                                      g_worms[w].seg[s].x, g_worms[w].seg[s].y,
+                                      g_worms[w].hz_dx, g_worms[w].hz_dy,
+                                      g_worms[w].hz_w, g_worms[w].hz_h))
+                { worm_seg_hit(w, s, 1u); g_dbg_beam++; }
+        }
+    }
+
+    for (e = 0u; e < (u8)LVL_WCRAWL_COUNT; e++) {
+        TWallCrawler *wc = &g_wcrawlers[e];
+        if (!wc->alive || !wc->on) continue;
+        if (rects_overlap_cached(bx, by, (u8)BEAM_HIT_W, h,
+                                  wc->x, wc->y, wc->hz_dx, wc->hz_dy,
+                                  wc->hz_w, wc->hz_h))
+            { wcrawl_hit(e, dmg); g_dbg_beam++; }
+    }
+}
+
 /* Wall worm collisions: ship shots (main and module) and the ship body
    against worm parts. The head is NOT included (invisible and
    invulnerable). An 8x8 box per part (tile top left). Called after
@@ -9515,6 +9700,15 @@ static void wallworms_collide(void) {
                     g_wp_bullets[i].active = 0u; hit = 1u;
                 }
             }
+            /* The beam takes the part out WITHOUT being consumed - it
+               pierces (see beam_collide). Tested here rather than there,
+               because only this loop knows where a part actually sits: its
+               position is the hole plus the path offset, not a field of its
+               own. */
+            if (!hit && g_beam.on && g_beam.oam != OAM_NONE && g_beam.top < g_beam.y &&
+                rects_overlap((s16)g_beam.x, (s16)g_beam.top, (u8)BEAM_HIT_W,
+                              (u8)((u8)(g_beam.y + 8u) - g_beam.top), sx, sy, 8u, 8u))
+                hit = 1u;
 #if BENCH_NOKILL
             if (hit) continue;   /* benchmark: the wall worm segment survives (the bullet is consumed) */
 #else
@@ -14144,10 +14338,12 @@ void main(void) {
 #if TEST_COLL_HALF
             if (g_testpar) {             /* every second frame only (measurement build, see TEST_COLL_HALF) */
             check_collisions();
+            beam_collide();      /* flying laser, see beam_collide */
             wallworms_collide();
             }
 #else
             check_collisions();
+            beam_collide();      /* flying laser, see beam_collide */
             wallworms_collide(); /* after check_collisions (it uses g_wp_bullets) */
 #endif
             }
