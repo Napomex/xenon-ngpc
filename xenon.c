@@ -1639,9 +1639,42 @@ static u8      g_wpmod_oam0, g_wpmod_oam1;         /* dynamic, OAM_NONE = no slo
    automatically and this    block can go. Applies to module AND muzzle -
    wp_spawn() uses the same values,    which is why the conversion lives in
    wpx_dx()/wpx_dy(). */
+/* ---- Where the side mounts sit, derived from the original ----
+   The four side positions come from DS:0x30a8 (weapons.md): (-26,+16),
+   (+26,+16), (-44,+24), (+44,+24) from the SHIP ANCHOR, claimed by CANNON,
+   LASER and MISSILE LAUNCHER in installation order. So a cannon and a
+   laser never share a position - one goes left, the other right.
+
+   TWO DIFFERENT SCALES, and that is the whole difficulty. Measured, not
+   estimated (tools/mount_convert.py):
+     - the ORIGINAL ship is 32x27 px with its anchor at (15,15) - read out
+       of X2SPR.DAT record #8, the drawn hull fills the record exactly.
+     - OUR ship is 24x21 px, read out of the metasprite cells in map.h.
+       That is 0.75 across and 0.78 down, NOT the 2/3 it looks like.
+     - the playfield, and with it everything positional in this port, is
+       HALVED: 160 px against 320.
+   The anchor is a point ON the ship, so it scales with the SHIP: our
+   anchor sits at (11, 12) from the ship's top left. The spread of the
+   mounts scales with the PLAYFIELD instead, at 0.5. Taking 0.75 there as
+   well would put the outer pair 33 px out on each side and make the craft
+   74 px wide on a 160 px screen - it would clip at both edges, and the
+   inner pair would float 3 px BELOW the hull instead of touching it.
+
+   The check that this is right: the cannon comes out at (-6,12), and the
+   value tuned BY EYE before any of this was (-8,10). Two pixels apart.
+
+   SELF-DISABLING, as before: applies only while both map values are 0, so
+   the tool wins the moment it delivers them. Module AND muzzle, since
+   wp_spawn() uses the same values - hence wpx_dx()/wpx_dy(). */
 #define WPX_FALLBACK_W  2u
 #define WPX_FALLBACK_DX (-8)
 #define WPX_FALLBACK_DY (10)
+/* Laser: side slot 1 (the right one), because the cannon holds slot 0.
+   Module is a single 8x8 cell, so half of it is 4 - mount anchor (24,20)
+   minus (4,4). */
+#define WPX_FALLBACK_W2  3u
+#define WPX_FALLBACK_DX2 (20)
+#define WPX_FALLBACK_DY2 (16)
 /* ---- Muzzle offset ----    The shot used to start exactly on the module
    corner (lvl_weapon_dx/dy), which    cannot be fine-tuned if the barrel
    is not in that corner. The tool now has a    muzzle dx/dy per weapon,
@@ -1657,13 +1690,17 @@ static u8      g_wpmod_oam0, g_wpmod_oam1;         /* dynamic, OAM_NONE = no slo
 #define WPX_MUZZLE_DY(w) ((s8)0)
 #endif
 static s8 wpx_dx(u8 w) {
-    if (w == (u8)WPX_FALLBACK_W && lvl_weapon_dx[w] == 0 && lvl_weapon_dy[w] == 0)
-        return (s8)WPX_FALLBACK_DX;
+    if (lvl_weapon_dx[w] == 0 && lvl_weapon_dy[w] == 0) {
+        if (w == (u8)WPX_FALLBACK_W)  return (s8)WPX_FALLBACK_DX;
+        if (w == (u8)WPX_FALLBACK_W2) return (s8)WPX_FALLBACK_DX2;
+    }
     return lvl_weapon_dx[w];
 }
 static s8 wpx_dy(u8 w) {
-    if (w == (u8)WPX_FALLBACK_W && lvl_weapon_dx[w] == 0 && lvl_weapon_dy[w] == 0)
-        return (s8)WPX_FALLBACK_DY;
+    if (lvl_weapon_dx[w] == 0 && lvl_weapon_dy[w] == 0) {
+        if (w == (u8)WPX_FALLBACK_W)  return (s8)WPX_FALLBACK_DY;
+        if (w == (u8)WPX_FALLBACK_W2) return (s8)WPX_FALLBACK_DY2;
+    }
     return lvl_weapon_dy[w];
 }
 static u8      g_wpx_oam[LVL_WEAPON_COUNT][WPX_CELLS][2];
@@ -3216,6 +3253,16 @@ static void beam_draw(u8 bi, u8 stage, u8 gun_x, u8 gun_y) {
     { u8 laenge = beam_len[bi][stage];
       u8 platz  = (u8)((gun_y > (u8)BEAM_TOP_Y) ? (gun_y - (u8)BEAM_TOP_Y) : 0u);
       if (laenge > platz) laenge = platz;
+      /* !! WHOLE SEGMENTS ONLY - THE DIVISION FLOORS ON PURPOSE. A single
+         leftover pixel does not make the beam a pixel longer, it costs a
+         WHOLE FURTHER SPRITE: the segment is a tile, and a tile is 8 px
+         whether one row of it is used or all eight. Stage 2 is the case in
+         point. The original's detached beam is 0x41 = 65 rows, halved 33,
+         and 33 px are four full segments plus one pixel - 7 OAM slots
+         instead of 6, out of the 7 that are free on average. beam_len
+         therefore carries 32, and the division makes sure the rule also
+         holds for whatever the tool exports into lvl_beam_len later
+         (tools/check_beam_len.mjs says so before the build). */
       seg = (u8)(laenge / mh); }
     if (seg > (u8)(BEAM_MAX_SEG - 2u)) seg = (u8)(BEAM_MAX_SEG - 2u);
 
@@ -9016,9 +9063,29 @@ static void weapon_update(void) {
                    mount has one beam with its own cooldown. If none is in
                    flight and fire is held, one starts at the muzzle. */
                 if (!g_beam.on && (g_pad & J_A) && g_player.weapon_cooldown[i] == 0u) {
-                    g_beam.x = (u8)(g_player.x + 8u + (u8)lvl_weapon_muzzle_dx[i]);
-                    g_beam.y = (u8)(g_player.y + (u8)lvl_weapon_muzzle_dy[i]);
-                    g_beam.stage = 0u;
+                    /* !! THROUGH wpx_dx/dy, NOT PAST THEM. This read
+                       lvl_weapon_muzzle_* on top of a hardwired "+8", so
+                       the beam left the middle of the SHIP no matter where
+                       the module was drawn - the module offset was skipped
+                       entirely and the interim value for an unplaced weapon
+                       never applied. Every other weapon goes through these
+                       two functions (see wp_spawn); the beam did not. */
+                    g_beam.x = (u8)((s16)g_player.x + wpx_dx(i) + WPX_MUZZLE_DX(i));
+                    g_beam.y = (u8)((s16)g_player.y + wpx_dy(i) + WPX_MUZZLE_DY(i));
+                    /* The upgrade stage is the ship's power stage - the same
+                       one that scales every other weapon (lvl_power_stage_*,
+                       raised by the power pickup, see apply_pickup). It used
+                       to be nailed to 0, so stage 1 and 2 were drawn and
+                       loaded but never reached.
+                       CLAMPED, because the two counts come from different
+                       tables: LVL_POWER_STAGE_COUNT belongs to the pickups,
+                       BEAM_STAGES to the "Beams" tab. They are both 3 today
+                       and there is nothing keeping them that way - a beam
+                       tab with two stages would otherwise index past the
+                       end and draw whatever follows in ROM. */
+                    g_beam.stage = g_player.power_stage;
+                    if (g_beam.stage >= (u8)BEAM_STAGES)
+                        g_beam.stage = (u8)((u8)BEAM_STAGES - 1u);
                     g_beam.on = 1u;
                     g_player.weapon_cooldown[i] = (u8)fps_from60(lvl_weapon_rate[i]);
                     g_busy_wpbul = 1u;
