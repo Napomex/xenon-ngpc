@@ -375,7 +375,7 @@ static s16 fps_spd_s(s16 v) {
    spr_tile_vram_init() for which physical VRAM ranges are actually free -
    two obvious-looking ranges belong to the HUD bar system and picking them
    breaks the life bar. */
-#define SPR_TILE_COUNT 361u   
+#define SPR_TILE_COUNT 339u   
 #define SPR_S_THRUST_HEAD 155u  /* Head of the 2-frame thruster animation. Forward thrust reuses the same graphic via SPR_VFLIP. */
 #define SPR_S_DIGIT0   37u   /* 37-46: digits 0-9 */
 #define SPR_S_ENEMY0   47u   /* 47-54: 8 animation frames of the enemy (head 47, currently unused) */
@@ -387,7 +387,7 @@ static s16 fps_spd_s(s16 v) {
 #define SHIP_META_M  2u
 #define SHIP_META_R1 3u
 #define SHIP_META_R2 4u
-#define SHIP_CELLS   7u
+#define SHIP_CELLS   3u
 
 /* Thruster position relative to the ship origin (x,y), for the neutral
    tilt stage (M) only. The ship is a 24x24 px box (see lvl_meta_dx/dy:
@@ -492,9 +492,7 @@ static const u8 lvl_tile_remap_A[LVL_TILE_DATA_COUNT] = {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 };
 
 #define LVL1_TILE_USED_COUNT_B 193u
@@ -561,10 +559,9 @@ static const u8 lvl_tile_remap_B[LVL_TILE_DATA_COUNT] = {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 };
+
 
 
 
@@ -722,7 +719,7 @@ static const u8 lvl1_terr_remap[LVL1_TERR_SEC_COUNT][LVL_TILE_DATA_COUNT] = {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
   },
   {  /* section 1 */
     0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
@@ -771,7 +768,7 @@ static const u8 lvl1_terr_remap[LVL1_TERR_SEC_COUNT][LVL_TILE_DATA_COUNT] = {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
   },
   {  /* section 2 */
     0, 1, 2, 0, 0, 5, 6, 7, 8, 9, 10, 11, 12, 0, 0, 0,
@@ -820,7 +817,7 @@ static const u8 lvl1_terr_remap[LVL1_TERR_SEC_COUNT][LVL_TILE_DATA_COUNT] = {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
   },
   {  /* section 3 */
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -869,9 +866,10 @@ static const u8 lvl1_terr_remap[LVL1_TERR_SEC_COUNT][LVL_TILE_DATA_COUNT] = {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
   },
 };
+
 
 
 
@@ -1048,7 +1046,20 @@ static void terr_sec_check(u16 row) {
 #define STAR_PAL        15u
 
 // --- Sprite slot allocation (OAM 0-63) --
-#define SPR_SHIP       0    /* 0-13: ship metasprite, 7 cells x 2 (a plus optional b overlay) - FIXED */
+#define SPR_SHIP       0    /* 0-5: ship metasprite, 3 cells x 2 (a plus optional b overlay) - FIXED */
+/* !! THESE THREE BOUNDARIES BELONG TOGETHER and have to move with
+   SHIP_CELLS. The ship occupies SHIP_CELLS*2 slots FIXED, because its chain
+   interleaves a and b: a cell without a b overlay burns its slot anyway, or
+   the chain breaks (for the pool objects the b overlays sit in a run of
+   their own behind the a run, and there a cell without b costs nothing -
+   see SPLIT CHAINS). For the ship it is therefore the CELL COUNT that
+   counts, not the colours.
+   04.08.2026: the ship shrank from 24x24 out of seven cells to 16x16 out of
+   THREE (a pyramid, apex on a +4 fine offset - the tool's tab can do that
+   since today). 7*2 = 14 fixed slots became 3*2 = 6.
+   !! THE EIGHT SLOTS DO NOT REACH THE POOL BY THEMSELVES. OAM_POOL_BASE/SIZE
+   and the bullet slots are fixed numbers; changing only SHIP_CELLS throws
+   the whole gain away and measures zero afterwards. */
 /* Shots use real multiplexing: several LOGICAL instances share FEWER
    physical OAM slots, drawn on alternating g_flicker phases (see
    draw_sprites). Phase 0 draws the even logical instances into the
@@ -1056,7 +1067,7 @@ static void terr_sec_check(u16 row) {
    shots keep their fixed slots; EVERYTHING else (enemies, metasprite
    enemies, digits, worms, map object shots, thrusters, weapon system,
    pickups) comes from one shared dynamic pool, see oam_pool_*() below. */
-#define SPR_BULLET_0   14   /* 14-15: 2 physical slots for MAX_BULLETS=4 logical shots (slot i%2, phase i/2 - see draw_sprites) */
+#define SPR_BULLET_0    6   /* 6-7: 2 physical slots for MAX_BULLETS=4 logical shots (slot i%2, phase i/2 - see draw_sprites) */
 #define BULLET_PHYS_SLOTS 2u
 
 /* ===== Shared dynamic OAM pool, slots 16-63 (48 of them) =====
@@ -1081,8 +1092,8 @@ static void terr_sec_check(u16 row) {
    last). Slots already    assigned are NEVER evicted - only new requests
    see the ordering, so anything    already on screen stays stable until
    its own despawn. */
-#define OAM_POOL_BASE 16u
-#define OAM_POOL_SIZE 48u
+#define OAM_POOL_BASE  8u
+#define OAM_POOL_SIZE 56u
 #define OAM_NONE 0xFFu
 static u8 g_oam_pool[OAM_POOL_SIZE];
 static u8 g_oam_pool_n;   /* number free in the stack */
@@ -2435,8 +2446,11 @@ static u8 rects_overlap_cached(s16 arx, s16 ary, u8 arw, u8 arh,
    ship_hitzone_cache_init() are defined further down, because they need
    tilt_by_level which is only declared there. */
 #define PICKUP_GRAB_R 18u   /* collection radius, centre to centre, see pickups_update */
-#define SHIP_HIT_FALLBACK_W 24u
-#define SHIP_HIT_FALLBACK_H 24u
+/* Only in effect while the tool supplies NO hit zone for the ship
+   metasprites (see ship_hitzone_cache_init). Pulled along with the ship,
+   and narrow on purpose - see the probe points. */
+#define SHIP_HIT_FALLBACK_W 8u
+#define SHIP_HIT_FALLBACK_H 16u
 /* Generic fallback for enemies without a matching hit zone: one strip tile
    (8x8). */
 #define ENEMY_HIT_FALLBACK_W 8u
@@ -2636,7 +2650,7 @@ static void build_lvl1(u16 start_idx) {
    terrain.    RECOMPUTE COMPLETELY from map.h on every update rather than
    adding to it:    shifted raw indices of existing S numbers show up ONLY
    as a wrongly drawn    sprite, NEVER as a compiler error. */
-#define SPR_RAW_REMAP_SIZE 546u   /* max(spr_raw_used) - SPR_ROM_BASE + 1 */
+#define SPR_RAW_REMAP_SIZE 526u   /* max(spr_raw_used) - SPR_ROM_BASE + 1 */
 static const u16 spr_raw_used[SPR_TILE_COUNT] = {
     345, 346, 347, 348, 349, 350, 351, 352, 353, 354, 355, 356,
     357, 358, 359, 360, 361, 362, 363, 364, 365, 366, 367, 368,
@@ -2647,28 +2661,26 @@ static const u16 spr_raw_used[SPR_TILE_COUNT] = {
     417, 418, 419, 420, 421, 422, 423, 424, 425, 426, 427, 428,
     429, 430, 431, 432, 433, 434, 435, 436, 437, 438, 439, 440,
     441, 442, 443, 444, 445, 446, 447, 448, 449, 450, 451, 452,
-    453, 454, 455, 456, 457, 458, 459, 460, 461, 462, 463, 464,
-    465, 466, 467, 468, 469, 470, 471, 472, 473, 474, 479, 481,
-    482, 483, 485, 486, 487, 488, 489, 490, 491, 494, 495, 496,
-    497, 498, 499, 500, 501, 502, 506, 508, 510, 511, 515, 516,
-    517, 518, 519, 520, 521, 522, 523, 524, 529, 530, 531, 532,
-    539, 540, 541, 542, 543, 544, 545, 546, 547, 548, 549, 550,
-    551, 555, 556, 557, 558, 561, 562, 565, 566, 569, 570, 571,
-    573, 576, 577, 578, 580, 582, 583, 586, 587, 590, 591, 592,
-    593, 595, 596, 597, 599, 601, 602, 603, 604, 605, 606, 607,
-    608, 609, 610, 611, 612, 613, 614, 615, 616, 617, 618, 619,
-    620, 621, 622, 623, 624, 625, 626, 627, 628, 629, 630, 631,
-    632, 633, 634, 635, 636, 637, 638, 639, 640, 641, 642, 643,
-    644, 645, 646, 647, 648, 649, 650, 651, 652, 653, 654, 655,
-    656, 657, 658, 659, 660, 661, 662, 663, 664, 665, 666, 667,
-    668, 669, 670, 671, 672, 673, 675, 676, 677, 678, 679, 680,
-    681, 682, 683, 684, 685, 686, 689, 690, 691, 692, 693, 694,
-    695, 696, 697, 698, 699, 700, 703, 704, 705, 706, 707, 708,
-    709, 710, 711, 712, 713, 714, 715, 716, 717, 718, 719, 720,
-    721, 722, 723, 724, 725, 726, 727, 728, 729, 730, 731, 732,
-    733, 734, 735, 736, 737, 738, 739, 740, 741, 742, 743, 744,
-    745, 746, 747, 748, 749, 750, 751, 752, 753, 760, 761, 762,
-    763,
+    457, 459, 460, 461, 463, 464, 466, 467, 468, 469, 470, 473,
+    474, 475, 476, 477, 478, 479, 480, 481, 485, 487, 489, 490,
+    494, 495, 496, 497, 498, 499, 500, 501, 502, 503, 508, 509,
+    510, 511, 518, 519, 520, 521, 522, 523, 524, 525, 526, 527,
+    528, 529, 530, 534, 535, 536, 537, 540, 541, 544, 545, 548,
+    549, 550, 552, 555, 556, 557, 559, 561, 562, 565, 566, 569,
+    570, 571, 572, 574, 575, 576, 578, 580, 581, 582, 583, 584,
+    585, 586, 587, 588, 589, 590, 591, 592, 593, 594, 595, 596,
+    597, 598, 599, 600, 601, 602, 603, 604, 605, 606, 607, 608,
+    609, 610, 611, 612, 613, 614, 615, 616, 617, 618, 619, 620,
+    621, 622, 623, 624, 625, 626, 627, 628, 629, 630, 631, 632,
+    633, 634, 635, 636, 637, 638, 639, 640, 641, 642, 643, 644,
+    645, 646, 647, 648, 649, 650, 651, 652, 655, 656, 657, 658,
+    659, 660, 661, 662, 663, 664, 665, 666, 669, 670, 671, 672,
+    673, 674, 675, 676, 677, 678, 679, 680, 683, 684, 685, 686,
+    687, 688, 689, 690, 691, 692, 693, 694, 695, 696, 697, 698,
+    699, 700, 701, 702, 703, 704, 705, 706, 707, 708, 709, 710,
+    711, 712, 713, 714, 715, 716, 717, 718, 719, 720, 721, 722,
+    723, 724, 725, 726, 727, 728, 729, 730, 731, 732, 733, 740,
+    741, 742, 743,
 };
 
 static const u16 spr_raw_remap[SPR_RAW_REMAP_SIZE] = {
@@ -2686,28 +2698,27 @@ static const u16 spr_raw_remap[SPR_RAW_REMAP_SIZE] = {
     49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64,
     65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80,
     81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96,
-    97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112,
-    113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128,
-    129, 0, 0, 0, 0, 130, 0, 131, 132, 133, 0, 134, 135, 136, 137, 138,
-    139, 140, 0, 0, 141, 142, 143, 144, 145, 146, 147, 148, 149, 0, 0, 0,
-    150, 0, 151, 0, 152, 153, 0, 0, 0, 154, 155, 156, 157, 158, 159, 160,
-    161, 162, 163, 0, 0, 0, 0, 164, 165, 166, 167, 0, 0, 0, 0, 0,
-    0, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 0, 0,
-    0, 181, 182, 183, 184, 0, 0, 185, 186, 0, 0, 187, 188, 0, 0, 189,
-    190, 191, 0, 192, 0, 0, 193, 194, 195, 0, 196, 0, 197, 198, 0, 0,
-    199, 200, 0, 0, 201, 202, 203, 204, 0, 205, 206, 207, 0, 208, 0, 209,
-    210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225,
-    226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239, 240, 241,
-    242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256, 257,
-    258, 259, 260, 261, 262, 263, 264, 265, 266, 267, 268, 269, 270, 271, 272, 273,
-    274, 275, 276, 277, 278, 279, 280, 281, 0, 282, 283, 284, 285, 286, 287, 288,
-    289, 290, 291, 292, 293, 0, 0, 294, 295, 296, 297, 298, 299, 300, 301, 302,
-    303, 304, 305, 0, 0, 306, 307, 308, 309, 310, 311, 312, 313, 314, 315, 316,
-    317, 318, 319, 320, 321, 322, 323, 324, 325, 326, 327, 328, 329, 330, 331, 332,
-    333, 334, 335, 336, 337, 338, 339, 340, 341, 342, 343, 344, 345, 346, 347, 348,
-    349, 350, 351, 352, 353, 354, 355, 356, 0, 0, 0, 0, 0, 0, 357, 358,
-    359, 360,
+    97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 0, 0, 0, 0, 108,
+    0, 109, 110, 111, 0, 112, 113, 0, 114, 115, 116, 117, 118, 0, 0, 119,
+    120, 121, 122, 123, 124, 125, 126, 127, 0, 0, 0, 128, 0, 129, 0, 130,
+    131, 0, 0, 0, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 0, 0,
+    0, 0, 142, 143, 144, 145, 0, 0, 0, 0, 0, 0, 146, 147, 148, 149,
+    150, 151, 152, 153, 154, 155, 156, 157, 158, 0, 0, 0, 159, 160, 161, 162,
+    0, 0, 163, 164, 0, 0, 165, 166, 0, 0, 167, 168, 169, 0, 170, 0,
+    0, 171, 172, 173, 0, 174, 0, 175, 176, 0, 0, 177, 178, 0, 0, 179,
+    180, 181, 182, 0, 183, 184, 185, 0, 186, 0, 187, 188, 189, 190, 191, 192,
+    193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205, 206, 207, 208,
+    209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224,
+    225, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239, 240,
+    241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256,
+    257, 258, 259, 0, 0, 260, 261, 262, 263, 264, 265, 266, 267, 268, 269, 270,
+    271, 0, 0, 272, 273, 274, 275, 276, 277, 278, 279, 280, 281, 282, 283, 0,
+    0, 284, 285, 286, 287, 288, 289, 290, 291, 292, 293, 294, 295, 296, 297, 298,
+    299, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 312, 313, 314,
+    315, 316, 317, 318, 319, 320, 321, 322, 323, 324, 325, 326, 327, 328, 329, 330,
+    331, 332, 333, 334, 0, 0, 0, 0, 0, 0, 335, 336, 337, 338,
 };
+
 
 
 
@@ -4350,10 +4361,25 @@ static u8 terrain_solid(u8 x, u8 y) {
     return lvl_tile_solid[n - 1u];
 }
 
-/* Ship hitbox relative to the 24x24 sprite origin: x+4..x+19, y+2..y+21. A
-   point grid with <= 8 px spacing, so it cannot skip an 8 px tile. */
-static const u8 ship_hit_x[3] = { 4u, 12u, 19u };
-static const u8 ship_hit_y[4] = { 2u, 9u, 16u, 21u };
+/* Terrain probe points of the ship. A point grid with <= 8 px spacing, so
+   it cannot step over an 8 px tile.
+
+   !! THESE POINTS DESCRIBE THE DRAWN HULL AND MUST FOLLOW IT. They read
+   { 4, 12, 19 } x { 2, 9, 16, 21 } while the ship was 24x24. After the
+   shrink to 16x16 those probed 4 px to the right of and 5 px below the
+   hull: the ship collided with terrain it visually cleared, got wedged in
+   the first narrow passage and the autoplay run stopped at row 163 instead
+   of reaching the boss.
+
+   !! THE BOX IS NARROWER THAN THE SHIP, DELIBERATELY (user's decision,
+   04.08.): it is the MIDDLE COLUMN, 8 px wide over the full height - x
+   4..11 over y 0..15, exactly the column under the apex. The two lower
+   cells stick out left and right of it and are allowed to overlap terrain:
+   "fly over the scenery a bit with the wings without getting stuck". A box
+   over the full 16 px would be the honest silhouette, but the ship would
+   wedge itself in every narrow passage. */
+static const u8 ship_hit_y[4] = { 2u, 6u, 10u, 14u };
+static const u8 ship_hit_x[3] = { 5u, 8u, 10u };
 
 static u8 ship_hits_terrain(u8 x, u8 y) {
     u8 i, j, yj;
@@ -9756,8 +9782,17 @@ static void wallworms_collide(void) {
 #else
             if (hit) { wallworm_seg_hit(w, k); k--; continue; }
 #endif
-            if (rects_overlap((s16)g_player.x, (s16)g_player.y, 22u, 21u, sx, sy, 8u, 8u))
-                { g_dmg_src = 6u; player_hit(); }
+            /* !! NO MORE A HAND-WRITTEN 22x21. That was the silhouette of
+               the old 24x24 ship and stayed behind when it shrank to
+               16x16 - the wall worms then hit 6 px beside the ship. Now
+               the same zone as everywhere else: from the tool, with
+               SHIP_HIT_FALLBACK as the fallback (ship_hitzone_rect). ONE
+               source, or the boxes drift apart again at the next
+               export. */
+            { s16 srx, sry; u8 srw, srh;
+              ship_hitzone_rect(&srx, &sry, &srw, &srh);
+              if (rects_overlap(srx, sry, srw, srh, sx, sy, 8u, 8u))
+                  { g_dmg_src = 6u; player_hit(); } }
         }
     }
 }
