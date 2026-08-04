@@ -9001,11 +9001,6 @@ static void wp_spawn(u8 i, s16 vx, s16 vy) {
 typedef struct { u8 active; s16 x_fix, y_fix; u8 timer; u8 phase; u8 oam; } TBomb;
 static TBomb g_bomb;
 
-/* LASER: an attached continuous beam, visible as a column of sprites above
-   the ship. LASER_SEGS segments about 20 px apart. */
-#define LASER_SEGS 7
-static u8 g_laser_on;
-static u8 g_laser_oam[LASER_SEGS];
 static void bomb_launch(u8 i) {
     g_bomb.active = 1u;
     g_busy_wpent = 1u;   /* early-out: flag set at the point of creation */
@@ -9405,56 +9400,6 @@ static void bomb_update(void) {
     }
 }
 
-/* LASER: while firing, the beam damages EVERY frame every enemy in the
-   column above the ship. Damage (power+1)*3 = 3/6/9, beam width 2*power+4
-   px (the original's 4*power+8 halved). No projectile - a pure strip test
-   (hitscan). */
-static void laser_update(void) {
-    u8 firing = (u8)((g_player.weapons_active & ((u16)1u << 3)) && (g_pad & J_A));
-    if (!firing) { g_laser_on = 0u; return; }
-    g_laser_on = 1u;
-    g_busy_wpent = 1u;   /* early-out: see g_busy_* */
-    {
-        s16 cx  = (s16)((s16)g_player.x + 12);                 /* ship centre */
-        s16 top = (s16)g_player.y;                             /* above the ship only */
-        u8  hw  = (u8)((u8)(g_player.power_stage + 2u) + 8u);  /* beam half width plus half the enemy width */
-        /* The beam damages EVERY FRAME, which makes this a RATE. At 20 fps
-           x3/2, or the damage per second would fall to 2/3. FPS_SPD_ALT
-           rather than FPS_SPD because 3 x 1.5 = 4.5 is not an integer:
-           alternating 4 and 5 hits the average exactly. */
-#if FPS_EXACT_HALVES
-        u8  dmg = (u8)FPS_SPD_ALT((u16)(((u16)g_player.power_stage + 1u) * 3u));
-#else
-        u8  dmg = (u8)FPS_SPD((u16)(((u16)g_player.power_stage + 1u) * 3u));
-#endif
-        u8  e, w, k;
-        for (e = 0u; e < (u8)MAX_ENEMIES; e++) {
-            if (!g_enemies[e].active || g_enemies[e].y >= (s16)CLIP_Y) continue;
-            if ((s16)((s16)g_enemies[e].y + 8) >= top) continue;
-            if (iabs16((s16)((s16)g_enemies[e].x + 8 - cx)) <= (s16)hw)
-                { enemy_take_damage(e, dmg); g_dbg_area++; }
-        }
-        for (e = 0u; e < (u8)MAX_METAENEMIES; e++) {
-            if (!g_metaenemies[e].active || g_metaenemies[e].y >= (s16)CLIP_Y) continue;
-            if ((s16)((s16)g_metaenemies[e].y + 8) >= top) continue;
-            if (iabs16((s16)((s16)g_metaenemies[e].x + 8 - cx)) <= (s16)hw)
-                { metaenemy_take_damage(e, dmg); g_dbg_area++; }
-        }
-        for (w = 0u; w < (u8)MAX_WORMS; w++) {
-            if (!g_worms[w].active) continue;
-            for (k = 0u; k < g_worms[w].num_segs; k++) {
-                if (!g_worms[w].seg[k].alive || g_worms[w].seg[k].y >= (s16)CLIP_Y) continue;
-                if ((s16)((s16)g_worms[w].seg[k].y + 4) >= top) continue;
-                if (iabs16((s16)((s16)g_worms[w].seg[k].x + 4 - cx)) <= (s16)hw)
-                    { worm_seg_hit(w, k, FPS_PAIR(g_f_dmg1)); g_dbg_area++; }   /* damage per frame, see dmg above */
-            }
-        }
-        /* boss eye in the beam */
-        if (boss_eye_hit((u8)cx, (u8)(top > 20 ? top - 20 : 0)))
-            { boss_take_damage(dmg); }
-    }
-}
-
 /* ELECTRO BALL: docks under the ship. While firing, the ball shoots
    forward (4 px per frame up) and grinds the first enemy it touches for 4
    damage per frame without being consumed. On release it glides back to
@@ -9624,7 +9569,23 @@ static void beam_collide(void) {
     h    = (u8)((u8)(g_beam.y + 8u) - g_beam.top);
     cy   = (s16)(by + (s16)(h >> 1));
     filt = (s16)((s16)BULLET_YFILTER + (s16)(h >> 1));
-    dmg  = wp_gun_damage(beam_weapon[0]);
+    /* (power+1)*3 = 3/6/9, the original's own figure for the swept beam
+       (weapons.md, 1000:2442). NOT wp_gun_damage() like the module shots:
+       this is now the weapon's ONLY damage source. Until 04.08. a second,
+       invisible one ran beside it - laser_update() swept the whole column
+       above the ship every frame as a hitscan, with a placeholder column of
+       sprites for a picture, from the days before the beam existed. With
+       the beam doing its own damage that was double, and the picture no
+       longer matched the effect: the strip damaged the full height of the
+       screen while the beam showed 32 px of it. The hitscan carried this
+       formula, so it moves here with it.
+       NO RATE CONVERSION, unlike there. The hitscan hit EVERY frame for as
+       long as fire was held, so its per-frame figure had to be scaled by
+       the frame rate or the damage per second would have changed with it.
+       The beam is a projectile: it passes a target once and hits it for the
+       two or three frames it overlaps, at 20 fps exactly as at 30. That is
+       also the situation the original's number is written for. */
+    dmg  = (u8)(((u8)g_player.power_stage + 1u) * 3u);
     px   = (u8)(g_beam.x + 4u);
     /* Map objects and the boss are POINT tests, so the column has to be
        sampled instead of handed over as a box. Every 8 px: that is the
@@ -10848,20 +10809,6 @@ wpx_done:
     u8 still = 0u;
     if (g_bomb.active) { wp_pet_draw(&g_bomb.oam, (u8)(g_bomb.x_fix >> 4), (u8)(g_bomb.y_fix >> 4)); still = 1u; }
     else               wp_pet_hide(&g_bomb.oam);
-    {   /* LASER column above the ship */
-        u8 s;
-        if (g_laser_on) {
-            u8 lx = (u8)(g_player.x + 8);   /* centre (12) minus half the sprite (4) */
-            still = 1u;
-            for (s = 0u; s < (u8)LASER_SEGS; s++) {
-                s16 sy = (s16)((s16)g_player.y - 4 - (s16)(s * 20));
-                if (sy < -8) { wp_pet_hide(&g_laser_oam[s]); continue; }
-                wp_pet_draw(&g_laser_oam[s], lx, (u8)(sy < 0 ? 0 : sy));
-            }
-        } else {
-            for (s = 0u; s < (u8)LASER_SEGS; s++) wp_pet_hide(&g_laser_oam[s]);
-        }
-    }
     /* electro ball, mine pod and laid mines */
     if (g_electro.active) { wp_pet_draw(&g_electro.oam, (u8)(g_electro.x_fix >> 4), (u8)(g_electro.y_fix >> 4)); still = 1u; }
     else                  wp_pet_hide(&g_electro.oam);
@@ -11348,7 +11295,6 @@ static void oam_reset_all(void) {
     for (i = 0; i < (u8)MAX_ENEMY_BULLETS; i++) g_ebullets[i].oam = OAM_NONE;
     for (i = 0; i < MAX_WPBULLETS; i++) g_wp_bullets[i].oam = OAM_NONE;
     g_bomb.active = 0u; g_bomb.oam = OAM_NONE;   /* special weapon entities */
-    g_laser_on = 0u; { u8 ls; for (ls = 0u; ls < (u8)LASER_SEGS; ls++) g_laser_oam[ls] = OAM_NONE; }
     g_electro.active = 0u; g_electro.oam = OAM_NONE;
     g_minepod.active = 0u; g_minepod.oam = OAM_NONE;
     { u8 mk; for (mk = 0u; mk < (u8)MINE_MAX; mk++) { g_mines[mk].active = 0u; g_mines[mk].oam = OAM_NONE; } }
@@ -12612,7 +12558,7 @@ static void respawn_do(void) {
     boss_hide();
     for (i = 0u; i < (u8)MAX_MAPOBJ_BULLETS; i++) g_mo_bullets[i].active = 0u;
     for (i = 0u; i < (u8)MAX_WPBULLETS; i++)    g_wp_bullets[i].active = 0u;
-    g_bomb.active = 0u; g_laser_on = 0u; g_electro.active = 0u; g_minepod.active = 0u;   /* wipe the special weapon entities (oam via oam_reset_all) */
+    g_bomb.active = 0u; g_electro.active = 0u; g_minepod.active = 0u;   /* wipe the special weapon entities (oam via oam_reset_all) */
     { u8 mk; for (mk = 0u; mk < (u8)MINE_MAX; mk++) g_mines[mk].active = 0u; }
 
     /* Reset OAM hard rather than hoping every drawing path returned its
@@ -14382,7 +14328,6 @@ void main(void) {
 #endif
             weapon_update();
             bomb_update();       /* BOMB (weapon 10) */
-            laser_update();      /* LASER (weapon 3) */
             electro_update();    /* ELECTRO BALL (weapon 6) */
             mine_update();       /* MINE (weapon 5) */
             nashwan_update();    /* Super Nashwan Power (expiry timer) */
