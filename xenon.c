@@ -10725,8 +10725,15 @@ static void draw_sprites(void) {
         /* g_wpmod_aidx comes from game_start() rather than being searched
            for again here (lvl_weapon_spr[0] is constant). */
         u16 wmod_s = lvl_sspr_anim_frames[g_wpmod_aidx][g_wpmod_frame];
-        u8  wx = (u8)(g_player.x + lvl_weapon_dx[0]);
-        u8  wy = (u8)(g_player.y + lvl_weapon_dy[0]);
+        /* !! DURCH wpx_dx/dy, NICHT AN IHNEN VORBEI. Weapon 0 has a drawing
+           path of its own, older than the generic one in draw_sprites(), and
+           it read lvl_weapon_dx/dy[0] straight - so the mount table never
+           reached it. With the ship down to 16x16 the module kept the (8,20)
+           of the old 24x21 hull and hung in the air below the tail, while the
+           tool showed it attached (user report 04.08.). Every other weapon
+           already goes through these two functions; this one did not. */
+        u8  wx = (u8)((s16)g_player.x + wpx_dx(0u));
+        u8  wy = (u8)((s16)g_player.y + wpx_dy(0u));
         if (g_wpmod_oam0 == OAM_NONE) {
             g_wpmod_oam0 = oam_pool_alloc();
             if (g_wpmod_oam0 != OAM_NONE) {
