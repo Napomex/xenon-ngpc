@@ -1072,6 +1072,16 @@ static void terr_sec_check(u16 row) {
    enemies, digits, worms, map object shots, thrusters, weapon system,
    pickups) comes from one shared dynamic pool, see oam_pool_*() below. */
 #define SPR_BULLET_0    6   /* 6-7: 2 physical slots for MAX_BULLETS=4 logical shots (slot i%2, phase i/2 - see draw_sprites) */
+/* Der Strahl bekommt KEINE festen Slots. Er hatte kurzzeitig welche, weil
+   er im dichten Band regelmaessig leer ausging - die Ursache war aber eine
+   andere: er verlangte einen ZUSAMMENHAENGENDEN Block (obwohl er gar nicht
+   kettet) und gab alles zurueck, wenn er nicht alles bekam. Beides ist weg;
+   seither holt er einzelne Slots und nimmt, was da ist. Gemessen sind ueber
+   die ganze Strecke mindestens 19 von 50 frei, und er braucht 4 bis 6.
+   Feste Slots waeren damit dauerhaft bezahlter Platz fuer einen Notfall,
+   den es nicht mehr gibt - der Vorrang aus dem Reservierungsblock in
+   draw_sprites() reicht (Nutzerentscheidung 04.08.). */
+#define BEAM_SLOTS_MAX  6u
 #define BULLET_PHYS_SLOTS 2u
 
 /* ===== Shared dynamic OAM pool, slots 16-63 (48 of them) =====
@@ -1167,6 +1177,35 @@ static u8 oam_pool_alloc(void) {
    search is harmless there. Returns the base slot or OAM_NONE; on OAM_NONE
    the drawing path falls back to single-slot assignment, so the graphics
    stay correct either way, just without the chaining saving. */
+/* ============ Vorrang im OAM-Pool ============
+   Reihenfolge nach Nutzerentscheidung 04.08.:
+       Schiff  -  Schuesse  -  Items  -  Gegner  -  Triebwerk
+   Das Schiff hat feste Slots (SPR_SHIP) und taucht hier nicht auf; alles
+   andere teilt sich den Pool.
+
+   UMGESETZT ALS RESTMENGE, NICHT ALS REIHENFOLGE IM CODE. Wer erst spaeter
+   im Frame zugreift, hat sonst Pech - aber die Zeichenreihenfolge legt
+   zugleich die BILDREIHENFOLGE fest (kleinerer Slot = weiter vorn), und die
+   soll sich nicht aendern. Stattdessen laesst jede Stufe eine Restmenge fuer
+   die wichtigeren stehen: eine nachrangige Klasse bekommt nur etwas,
+   solange mehr als ihr Rest frei ist. Schuesse duerfen den Pool bis auf
+   null nehmen, das Triebwerk erst, wenn reichlich da ist.
+
+   Die Zahlen sind ein Kompromiss und keine Messung: gross genug, dass ein
+   fehlender Gegner nicht am Triebwerk scheitert, klein genug, dass im
+   ruhigen Level alles gezeichnet wird. Wer sie aendert, sollte
+   autoplay.py --oam davor und danach fahren. */
+#define OAM_PRIO_SHOT   0u   /* Spielerschuesse, Strahl, Waffenmodule */
+#define OAM_PRIO_ITEM   1u   /* Pickups */
+#define OAM_PRIO_ENEMY  2u   /* Gegner, ihre Schuesse, Wuermer, Kriecher */
+#define OAM_PRIO_THRUST 3u   /* Triebwerksflammen */
+static const u8 oam_prio_rest[4] = { 0u, 3u, 6u, 12u };
+
+static u8 oam_pool_alloc_p(u8 prio) {
+    if (g_oam_pool_n <= oam_prio_rest[prio]) return OAM_NONE;
+    return oam_pool_alloc();
+}
+
 static u8 oam_pool_alloc_run(u8 n) {
     u8 base, k, i, j;
     if (n == 0u || n > (u8)OAM_POOL_SIZE) return OAM_NONE;
@@ -1748,9 +1787,28 @@ static void wp_mounts_assign(void) {
     u8 belegt[LVL_MOUNT_COUNT];
     u8 w, m;
     for (m = 0u; m < (u8)LVL_MOUNT_COUNT; m++) belegt[m] = 0u;
+    /* !! WER SCHON MONTIERT IST, BLEIBT WO ER IST. Der erste Anlauf verteilte
+       bei jeder Aenderung ALLES neu, in der Reihenfolge der Waffennummern -
+       und damit sprang eine laengst montierte Waffe zur Seite, sobald eine
+       mit kleinerer Nummer dazukam: "der Laser haengt zuerst am linken
+       Fluegel, beim Einsammeln der Kanone huepft er nach rechts"
+       (Nutzerbefund 04.08.). Im Original vergibt der Installer den ersten
+       freien Platz an die NEUE Waffe und ruehrt die bestehenden nicht an.
+       Also zwei Durchgaenge: erst die bestehenden Zuordnungen festhalten,
+       dann nur die neuen einsortieren. */
     for (w = 0u; w < (u8)LVL_WEAPON_COUNT; w++) {
-        g_wp_mount[w] = 0xFFu;
+        u8 alt = g_wp_mount[w];
+        if (!(g_player.weapons_active & ((u16)1u << w))) { g_wp_mount[w] = 0xFFu; continue; }
+        if (alt < (u8)LVL_MOUNT_COUNT && !belegt[alt] &&
+            lvl_mount_group[alt] == lvl_weapon_mount_slot[w]) {
+            belegt[alt] = 1u;            /* behaelt seinen Platz */
+        } else {
+            g_wp_mount[w] = 0xFFu;       /* neu, oder Platz passt nicht mehr */
+        }
+    }
+    for (w = 0u; w < (u8)LVL_WEAPON_COUNT; w++) {
         if (!(g_player.weapons_active & ((u16)1u << w))) continue;
+        if (g_wp_mount[w] != 0xFFu) continue;
         for (m = 0u; m < (u8)LVL_MOUNT_COUNT; m++) {
             if (belegt[m]) continue;
             if (lvl_mount_group[m] != lvl_weapon_mount_slot[w]) continue;
@@ -3404,28 +3462,23 @@ static void beam_draw(u8 bi, u8 stage, u8 gun_x, u8 gun_y) {
        block is now taken at full size on the first draw and kept to the
        end; surplus slots are only hidden, not released. That gives EXACTLY
        ONE attempt per beam, and it falls in the moment when most is free. */
-    if (g_beam.oam == OAM_NONE || g_beam.cnt != (u8)(seg_max + 2u)) {
-        if (g_beam.oam != OAM_NONE) {
-            for (i = 0u; i < g_beam.cnt; i++) UnsetSprite(g_beam.oams[i]);
-            for (i = 0u; i < g_beam.cnt; i++) oam_pool_free(g_beam.oams[i]);
-            g_beam.oam = OAM_NONE; g_beam.cnt = 0u;
-        }
+    /* Einen bereits reservierten Block behalten - der Vorrangblock in
+       draw_sprites() hat ihn geholt, und ihn hier wegzuwerfen hiesse, ihn
+       im naechsten Frame wieder anzufordern, wenn es voller ist. */
+    if (g_beam.oam == OAM_NONE) {
         /* !! NIMM, WAS DA IST - GAR NICHTS IST DIE SCHLECHTESTE ANTWORT.
-           Vorher gab der Strahl alles zurueck, wenn nicht ALLE Slots zu
-           haben waren, und war damit unsichtbar. Im dichten Gegnerband ist
-           der Pool aber zeitweise leer, und genau dort passiert es: der
-           Laser "steigt nach dem ersten Viertel aus und schiesst erst nach
-           dem Endboss wieder" (Nutzerbefund 04.08.) - dazwischen liegt die
-           Strecke, auf der am meisten los ist.
-           Mit zwei Slots (Ende + Kopf) ist der Strahl noch als Strahl zu
-           erkennen; darunter lohnt er nicht. */
+           Einzelne Slots, kein zusammenhaengender Block (es wird nicht
+           gekettet, siehe oams[]). Unter zwei - Ende und Kopf - lohnt es
+           nicht; darueber wird die Saeule kuerzer gezeichnet und die
+           fehlenden Mittelteile flackern im Wechsel durch. */
         { u8 noetig = (u8)(seg_max + 2u), habe = 0u;
+          if (noetig > (u8)BEAM_SLOTS_MAX) noetig = (u8)BEAM_SLOTS_MAX;
           for (i = 0u; i < noetig; i++) {
-              first = oam_pool_alloc();
+              first = oam_pool_alloc_p(OAM_PRIO_SHOT);
               if (first == OAM_NONE) break;
               g_beam.oams[habe++] = first;
           }
-          if (habe < 2u) {              /* nicht einmal Ende und Kopf */
+          if (habe < 2u) {
               for (i = 0u; i < habe; i++) oam_pool_free(g_beam.oams[i]);
               return;
           }
@@ -5774,7 +5827,7 @@ static void boss_draw(void) {
             continue;
         }
         if (g_boss.oam[k] == OAM_NONE) {
-            g_boss.oam[k] = oam_pool_alloc();
+            g_boss.oam[k] = oam_pool_alloc_p(OAM_PRIO_ENEMY);
             if (g_boss.oam[k] == OAM_NONE) continue;          /* pool empty: try next frame */
         }
         if (!last) { spr_draw_s_single(g_boss.oam[k], (u16)BOSS_SPR_SEG, g_boss.seg_x[k], g_boss.seg_y[k]); continue; }
@@ -5803,7 +5856,7 @@ static void boss_draw(void) {
                   lvl_rotset_pal[BOSS_TIP_ROTSET][dir]);
         SpriteControl(g_boss.oam[k], SPR_FRONT, flip);
         if (rawb != 0u && rawb != 0xFFFFu) {
-            if (g_boss.oam_b == OAM_NONE) g_boss.oam_b = oam_pool_alloc();
+            if (g_boss.oam_b == OAM_NONE) g_boss.oam_b = oam_pool_alloc_p(OAM_PRIO_ENEMY);
             if (g_boss.oam_b != OAM_NONE) {
                 SetSprite(g_boss.oam_b, spr_vram(rawb), 0, g_boss.seg_x[k], g_boss.seg_y[k],
                           lvl_rotset_b_pal[BOSS_TIP_ROTSET][dir]);
@@ -6170,7 +6223,7 @@ static void ebullets_draw(void) {
             u8 wx = (u8)(g_ebullets[i].x_fix >> 4);
             u8 wy = (u8)(g_ebullets[i].y_fix >> 4);
             if (g_ebullets[i].oam == OAM_NONE) {
-                g_ebullets[i].oam = oam_pool_alloc();
+                g_ebullets[i].oam = oam_pool_alloc_p(OAM_PRIO_ENEMY);
                 if (g_ebullets[i].oam == OAM_NONE) continue;   /* pool empty -> try again next frame */
                 SetSprite(g_ebullets[i].oam, spr_vram(lvl_sspr_a_idx[n]), 0, wx, wy, lvl_sspr_a_pal[n]);
                 /* SpriteControl(FRONT,0) removed - redundant after
@@ -8154,7 +8207,7 @@ static void wallworm_draw(u8 w) {
                 continue;
             }
             if (p->oam == OAM_NONE) {
-                p->oam = oam_pool_alloc();
+                p->oam = oam_pool_alloc_p(OAM_PRIO_ENEMY);
                 if (p->oam == OAM_NONE) continue;
             }
             SetSprite(p->oam, spr_vram(raw), 0, (u8)sx, (u8)sy, lvl_rotset_pal[rot][ddir]);
@@ -8209,7 +8262,7 @@ static void wallworm_balls_update_draw(void) {
             u8  flip = (u8)(((rf & 1u) ? SPR_HFLIP : 0u) | ((rf & 2u) ? SPR_VFLIP : 0u));
             if (raw == 0xFFFFu) continue;
             if (bl->oam == OAM_NONE) {
-                bl->oam = oam_pool_alloc();
+                bl->oam = oam_pool_alloc_p(OAM_PRIO_ENEMY);
                 if (bl->oam == OAM_NONE) continue;
                 bl->last_snum = 0u; bl->last_flip = 0xFFu;
             }
@@ -8844,12 +8897,12 @@ static void wcrawls_draw(void) {
             u16 bx = lvl_sspr_b_idx[s_num[c] - 1u];
             u8 needb = (u8)(bx != 0u && bx != 0xFFFFu);
             if (w->oam[c][0] == OAM_NONE) {
-                w->oam[c][0] = oam_pool_alloc();
+                w->oam[c][0] = oam_pool_alloc_p(OAM_PRIO_ENEMY);
                 if (w->oam[c][0] == OAM_NONE) continue;            /* pool empty */
                 w->last_snum[c] = 0u;
             }
             if (needb && w->oam[c][1] == OAM_NONE) {
-                w->oam[c][1] = oam_pool_alloc();
+                w->oam[c][1] = oam_pool_alloc_p(OAM_PRIO_ENEMY);
                 w->last_snum[c] = 0u;
             }
             if (s_num[c] == w->last_snum[c]) {    /* same frame -> position only */
@@ -9573,7 +9626,7 @@ static void wp_pet_draw(u8 *oam, u8 x, u8 y) {
     u16 wspr = lvl_weapon_bullet_spr[0];
     u16 wb_n = (u16)((wspr & 0x01FFu) - 1u);
     if (*oam == OAM_NONE) {
-        *oam = oam_pool_alloc();
+        *oam = oam_pool_alloc_p(OAM_PRIO_ENEMY);
         if (*oam == OAM_NONE) return;
         SetSprite(*oam, spr_vram(lvl_sspr_a_idx[wb_n]), 0, x, y, lvl_sspr_a_pal[wb_n]);
         SpriteControl(*oam, SPR_FRONT, 0);
@@ -10135,19 +10188,40 @@ static void draw_sprites(void) {
     if (!PROF_OFF(20))   /* collective sub-block 20, see the shots below */
     {
         u8 pk;
+        /* !! DER STRAHL ZUERST, VOR GEGNERN UND PICKUPS. Er braucht vier bis
+           sechs Slots am Stueck seiner Lebensdauer, und wer sie erst holt,
+           wenn der Rest sich bedient hat, geht im dichten Band leer aus -
+           genau daran ist der Laser "nach den Wuermern wieder tot" gewesen.
+           Feste Slots waeren die grobe Loesung gewesen; der Vorrang hier
+           kostet nichts und gibt sie frei, sobald der Strahl weg ist
+           (Nutzerentscheidung 04.08.: "leg die Prioritaet immer auf die
+           Schuesse, dann brauchen wir keine festen Slots").
+           NUR RESERVIEREN, nicht zeichnen - beam_draw() findet den Block
+           dann vor und laesst ihn stehen, die Reihenfolge im Bild bleibt
+           unveraendert. Dieselbe Bauart wie beim Waffenmodul darunter. */
+        if (g_beam.on && g_beam.oam == OAM_NONE) {
+            u8 bn = (u8)BEAM_SLOTS_MAX, bh = 0u, bs;
+            for (bs = 0u; bs < bn; bs++) {
+                u8 got = oam_pool_alloc_p(OAM_PRIO_SHOT);
+                if (got == OAM_NONE) break;
+                g_beam.oams[bh++] = got;
+            }
+            if (bh < 2u) { for (bs = 0u; bs < bh; bs++) oam_pool_free(g_beam.oams[bs]); }
+            else { g_beam.cnt = bh; g_beam.oam = g_beam.oams[0]; }
+        }
         if (g_player.weapons_active && g_wpmod_oam0 == OAM_NONE) {
-            g_wpmod_oam0 = oam_pool_alloc();
+            g_wpmod_oam0 = oam_pool_alloc_p(OAM_PRIO_SHOT);
             if (g_wpmod_oam0 != OAM_NONE) {
-                g_wpmod_oam1 = oam_pool_alloc();
+                g_wpmod_oam1 = oam_pool_alloc_p(OAM_PRIO_SHOT);
                 if (g_wpmod_oam1 == OAM_NONE) { oam_pool_free(g_wpmod_oam0); g_wpmod_oam0 = OAM_NONE; }
                 else g_wpmod_last_s = 0u;
             }
         }
         for (pk = 0u; pk < (u8)MAX_PICKUPS; pk++) {
             if (g_pickups[pk].active && g_pickups[pk].spr != 0u && g_pickups[pk].oam0 == OAM_NONE) {
-                g_pickups[pk].oam0 = oam_pool_alloc();
+                g_pickups[pk].oam0 = oam_pool_alloc_p(OAM_PRIO_ITEM);
                 if (g_pickups[pk].oam0 != OAM_NONE) {
-                    g_pickups[pk].oam1 = oam_pool_alloc();
+                    g_pickups[pk].oam1 = oam_pool_alloc_p(OAM_PRIO_ITEM);
                     if (g_pickups[pk].oam1 == OAM_NONE) { oam_pool_free(g_pickups[pk].oam0); g_pickups[pk].oam0 = OAM_NONE; }
                 }
             }
@@ -10188,9 +10262,12 @@ static void draw_sprites(void) {
             u8  rx    = (u8)(g_player.x + rdx);
 
             if (g_thrust_oam0 == OAM_NONE) {
-                g_thrust_oam0 = oam_pool_alloc();
+                /* Triebwerk ganz hinten: zwei kleine Flammen, die keinem
+                   Gegner den Platz nehmen duerfen. Faellt eine aus, sieht
+                   man es kaum - ein fehlender Gegner sofort. */
+                g_thrust_oam0 = oam_pool_alloc_p(OAM_PRIO_THRUST);
                 if (g_thrust_oam0 == OAM_NONE) goto thrust_done;   /* pool empty, try again next frame */
-                g_thrust_oam1 = oam_pool_alloc();
+                g_thrust_oam1 = oam_pool_alloc_p(OAM_PRIO_THRUST);
                 if (g_thrust_oam1 == OAM_NONE) { oam_pool_free(g_thrust_oam0); g_thrust_oam0 = OAM_NONE; goto thrust_done; }
                 g_thrust_last_s = 0u;
             }
@@ -10259,7 +10336,7 @@ static void draw_sprites(void) {
         }
         still = 1u;
         if (g_bullets[i].oam == OAM_NONE) {
-            g_bullets[i].oam = oam_pool_alloc();
+            g_bullets[i].oam = oam_pool_alloc_p(OAM_PRIO_SHOT);
             if (g_bullets[i].oam == OAM_NONE) continue;   /* pool empty -> try again next frame */
             g_bullets[i].last_snum = 0u;
         }
@@ -10316,7 +10393,7 @@ static void draw_sprites(void) {
         }
         needs_b = e->c_needs_b;
         if (e->oam0 == OAM_NONE) {
-            e->oam0 = oam_pool_alloc();
+            e->oam0 = oam_pool_alloc_p(OAM_PRIO_ENEMY);
             if (e->oam0 == OAM_NONE) continue;   /* pool empty, try again next frame */
             e->last_snum = 0u;   /* new slot -> force a full redraw */
         }
@@ -10334,7 +10411,7 @@ static void draw_sprites(void) {
                costs one write instead of two. If it is taken, use any
                other slot (unchained, as before). */
             if (oam_pool_take((u8)(e->oam0 + 1u))) { e->oam1 = (u8)(e->oam0 + 1u); e->chain_b = 1u; }
-            else { e->oam1 = oam_pool_alloc(); e->chain_b = 0u; }
+            else { e->oam1 = oam_pool_alloc_p(OAM_PRIO_ENEMY); e->chain_b = 0u; }
             if (e->oam1 != OAM_NONE) e->last_snum = 0u;   /* force a full redraw WITH b */
             /* allocation failed -> a-only this frame, try again next
                frame. */
@@ -10396,7 +10473,7 @@ static void draw_sprites(void) {
             continue;
         }
         if (mb->oam == OAM_NONE) {
-            mb->oam = oam_pool_alloc();
+            mb->oam = oam_pool_alloc_p(OAM_PRIO_ENEMY);
             if (mb->oam == OAM_NONE) continue;   /* pool empty, try again next frame */
             mb->last_snum = 0u;
         }
@@ -10615,7 +10692,7 @@ static void draw_sprites(void) {
                 continue;
             }
             if (m->oam[c] == OAM_NONE) {
-                m->oam[c] = oam_pool_alloc();
+                m->oam[c] = oam_pool_alloc_p(OAM_PRIO_ENEMY);
                 if (m->oam[c] == OAM_NONE) continue;   /* pool empty, try again next frame */
                 m->last_snum[c] = 0u;
             }
@@ -10628,7 +10705,7 @@ static void draw_sprites(void) {
                 u8  need_b = m->c_needb[c];
                 if (need_b) {
                     if (m->oam_b[c] == OAM_NONE) {
-                        m->oam_b[c] = oam_pool_alloc();
+                        m->oam_b[c] = oam_pool_alloc_p(OAM_PRIO_ENEMY);
                         m->last_snum[c] = 0u;   /* force a redraw */
                     }
                 } else if (m->oam_b[c] != OAM_NONE) {
@@ -10711,7 +10788,7 @@ static void draw_sprites(void) {
                         continue;
                     }
                     if (sg->oam == OAM_NONE) {
-                        sg->oam = oam_pool_alloc();
+                        sg->oam = oam_pool_alloc_p(OAM_PRIO_ENEMY);
                         if (sg->oam == OAM_NONE) continue;   /* pool empty, try again next frame */
                         sg->last_snum = 0u;
                         sg->last_flip = 0xFFu;
@@ -10764,9 +10841,9 @@ static void draw_sprites(void) {
         u8  wx = (u8)((s16)g_player.x + wpx_dx(0u));
         u8  wy = (u8)((s16)g_player.y + wpx_dy(0u));
         if (g_wpmod_oam0 == OAM_NONE) {
-            g_wpmod_oam0 = oam_pool_alloc();
+            g_wpmod_oam0 = oam_pool_alloc_p(OAM_PRIO_SHOT);
             if (g_wpmod_oam0 != OAM_NONE) {
-                g_wpmod_oam1 = oam_pool_alloc();
+                g_wpmod_oam1 = oam_pool_alloc_p(OAM_PRIO_SHOT);
                 if (g_wpmod_oam1 == OAM_NONE) { oam_pool_free(g_wpmod_oam0); g_wpmod_oam0 = OAM_NONE; }
                 else g_wpmod_last_s = 0u;
             }
@@ -10922,9 +10999,9 @@ wpx_done:
             u8 wx = (u8)(g_player.x + bx + c_dx[c]);
             u8 wy = (u8)(g_player.y + by + c_dy[c]);
             if (g_wpx_oam[w][c][0] == OAM_NONE) {
-                g_wpx_oam[w][c][0] = oam_pool_alloc();
+                g_wpx_oam[w][c][0] = oam_pool_alloc_p(OAM_PRIO_SHOT);
                 if (g_wpx_oam[w][c][0] == OAM_NONE) continue;      /* pool empty */
-                g_wpx_oam[w][c][1] = oam_pool_alloc();
+                g_wpx_oam[w][c][1] = oam_pool_alloc_p(OAM_PRIO_SHOT);
                 if (g_wpx_oam[w][c][1] == OAM_NONE) {
                     oam_pool_free(g_wpx_oam[w][c][0]); g_wpx_oam[w][c][0] = OAM_NONE; continue;
                 }
@@ -11035,7 +11112,7 @@ wpx_done:
                   }
               } }
             if (g_wp_bullets[i].oam == OAM_NONE) {
-                g_wp_bullets[i].oam = oam_pool_alloc();
+                g_wp_bullets[i].oam = oam_pool_alloc_p(OAM_PRIO_SHOT);
                 if (g_wp_bullets[i].oam == OAM_NONE) continue;   /* pool empty, try again next frame */
                 /* lvl_weapon_bullet_flip[0] (bit 0 = mirror horizontally,
                    bit 1 = vertically) used to be ignored completely. A
@@ -11105,9 +11182,9 @@ wpx_done:
             if (g_pickups[pk].active) still = 1u;
             if (g_pickups[pk].active && g_pickups[pk].spr != 0u) {
                 if (g_pickups[pk].oam0 == OAM_NONE) {
-                    g_pickups[pk].oam0 = oam_pool_alloc();
+                    g_pickups[pk].oam0 = oam_pool_alloc_p(OAM_PRIO_ITEM);
                     if (g_pickups[pk].oam0 != OAM_NONE) {
-                        g_pickups[pk].oam1 = oam_pool_alloc();
+                        g_pickups[pk].oam1 = oam_pool_alloc_p(OAM_PRIO_ITEM);
                         if (g_pickups[pk].oam1 == OAM_NONE) { oam_pool_free(g_pickups[pk].oam0); g_pickups[pk].oam0 = OAM_NONE; }
                     }
                 }
