@@ -1725,7 +1725,60 @@ static u8      g_wpmod_oam0, g_wpmod_oam1;         /* dynamic, OAM_NONE = no slo
 #define WPX_MUZZLE_DX(w) (((w) == (u8)WPX_FALLBACK_W) ? (s8)2 : (s8)0)
 #define WPX_MUZZLE_DY(w) ((s8)0)
 #endif
+/* ---- Montageplaetze aus dem Tool ----
+   DIE POSITION GEHOERT ZUM SCHIFF, NICHT ZUR WAFFE. Vorher trug jede Waffe
+   ihre eine feste Stelle (lvl_weapon_dx/dy); Kanone und Laser mussten sich
+   damit um dieselbe streiten, und beim Schrumpfen des Schiffs blieb jede
+   von Hand eingestellte Zahl zurueck - im Bild standen die Module neben dem
+   Rumpf, waehrend sie im Tool sassen (Nutzerbefund 04.08.).
+   Jetzt wie im Original (weapons.md, DS:0x30a8 / Installer 1000:3117): das
+   Schiff hat Plaetze mit Gruppe, die Waffe sagt nur ihre Gruppe, und sie
+   bekommt den ERSTEN FREIEN Platz darin. Die Ecke des Moduls ergibt sich
+   aus Platz minus Bezugspunkt:
+       modul = lvl_mount_dx[platz] - lvl_weapon_anchor_dx[waffe]
+   Der Bezugspunkt ist der Punkt IM Modul, der auf dem Platz liegt - beim
+   8x16-Modul der Kanone also (4,8) und nicht die Ecke. */
+#ifdef LVL_MOUNT_COUNT
+static u8  g_wp_mount[LVL_WEAPON_COUNT];   /* Platz je Waffe, 0xFF = keiner */
+static u16 g_wp_mount_for;                 /* weapons_active, fuer das es gilt */
+static u8  g_wp_mount_done;
+
+/* Neu verteilen. Reihenfolge = Waffenindex; das ist die einzige stabile,
+   die wir haben (das Original vergibt nach Installationsreihenfolge, die
+   wir nicht mitschreiben). */
+static void wp_mounts_assign(void) {
+    u8 belegt[LVL_MOUNT_COUNT];
+    u8 w, m;
+    for (m = 0u; m < (u8)LVL_MOUNT_COUNT; m++) belegt[m] = 0u;
+    for (w = 0u; w < (u8)LVL_WEAPON_COUNT; w++) {
+        g_wp_mount[w] = 0xFFu;
+        if (!(g_player.weapons_active & ((u16)1u << w))) continue;
+        for (m = 0u; m < (u8)LVL_MOUNT_COUNT; m++) {
+            if (belegt[m]) continue;
+            if (lvl_mount_group[m] != lvl_weapon_mount_slot[w]) continue;
+            belegt[m] = 1u; g_wp_mount[w] = m; break;
+        }
+    }
+    g_wp_mount_for = g_player.weapons_active;
+    g_wp_mount_done = 1u;
+}
+
+/* Selbstsynchronisierend: die Verteilung haengt NUR an weapons_active, und
+   jeder Aufrufer von wpx_dx/dy soll sie richtig vorfinden, ohne dass man an
+   jede Kauf-, Aufsammel- und Wiedereinstiegsstelle einen Aufruf haengt -
+   davon gibt es zu viele, und eine vergessene faellt erst im Bild auf. */
+static void wp_mounts_sync(void) {
+    if (!g_wp_mount_done || g_wp_mount_for != g_player.weapons_active)
+        wp_mounts_assign();
+}
+#endif
+
 static s8 wpx_dx(u8 w) {
+#ifdef LVL_MOUNT_COUNT
+    wp_mounts_sync();
+    if (g_wp_mount[w] != 0xFFu)
+        return (s8)(lvl_mount_dx[g_wp_mount[w]] - lvl_weapon_anchor_dx[w]);
+#endif
     if (lvl_weapon_dx[w] == 0 && lvl_weapon_dy[w] == 0) {
         if (w == (u8)WPX_FALLBACK_W)  return (s8)WPX_FALLBACK_DX;
         if (w == (u8)WPX_FALLBACK_W2) return (s8)WPX_FALLBACK_DX2;
@@ -1733,6 +1786,11 @@ static s8 wpx_dx(u8 w) {
     return lvl_weapon_dx[w];
 }
 static s8 wpx_dy(u8 w) {
+#ifdef LVL_MOUNT_COUNT
+    wp_mounts_sync();
+    if (g_wp_mount[w] != 0xFFu)
+        return (s8)(lvl_mount_dy[g_wp_mount[w]] - lvl_weapon_anchor_dy[w]);
+#endif
     if (lvl_weapon_dx[w] == 0 && lvl_weapon_dy[w] == 0) {
         if (w == (u8)WPX_FALLBACK_W)  return (s8)WPX_FALLBACK_DY;
         if (w == (u8)WPX_FALLBACK_W2) return (s8)WPX_FALLBACK_DY2;
@@ -5010,6 +5068,18 @@ static void player_init(void) {
     /* !! g_beam.oam is a static without an initialiser - hardware does not
        clear RAM, and a garbage value would be an OAM slot nobody owns. */
     g_beam.oam = OAM_NONE; g_beam.cnt = 0u; g_beam.on = 0u;
+#ifdef LVL_MOUNT_COUNT
+    /* !! DIESELBE KLASSE, UND ICH BIN PROMPT HINEINGELAUFEN. wp_mounts_sync()
+       rechnet nur neu, wenn sich weapons_active GEGENUEBER g_wp_mount_for
+       geaendert hat - beides Statics ohne Initialisierer. Stand beim
+       Einschalten zufaellig g_wp_mount_done != 0 und g_wp_mount_for zufaellig
+       auf dem aktuellen weapons_active, wurde nie verteilt und g_wp_mount[]
+       blieb Muell: Module an falschen Stellen, und eine Waffe, deren Eintrag
+       zufaellig 0xFF war, verlor ihren Platz. Nutzerbefund 04.08.: "der Laser
+       geht irgendwann nicht mehr". Hier wird deshalb erzwungen verteilt. */
+    g_wp_mount_done = 0u; g_wp_mount_for = 0xFFFFu;
+    { u8 mw; for (mw = 0u; mw < (u8)LVL_WEAPON_COUNT; mw++) g_wp_mount[mw] = 0xFFu; }
+#endif
     g_player.lives   = (u8)PLAYER_START_LIVES;
     /* Pull the display along right away - otherwise the bar shows whatever
        digit happened to be in RAM at power-on until the first death. The
@@ -12361,16 +12431,38 @@ static u16 shop_sell_value(u8 idx) {
 
 /* Is the mount slot free? Weapons with the same lvl_weapon_mount_slot are
    mutually exclusive. */
+/* Ist noch ein PLATZ frei, nicht: ist die Gruppe unbenutzt.
+   !! DAS WAR DER GRUND FUER "NACH DEM SHOP SIND KEINE WEITEREN WAFFEN DA".
+   Vorher genuegte EINE montierte Waffe derselben Gruppe, um jede weitere zu
+   sperren - die Gruppe hatte damit faktisch Kapazitaet 1. Die Seitengruppe
+   hat aber VIER Plaetze (lvl_mount_*), genau wie im Original, wo erst die
+   volle Gruppe den Kauf verhindert und dann ohne Rauswurf. Gezaehlt wird
+   deshalb, wie viele Plaetze der Gruppe es gibt und wie viele davon schon
+   belegt sind. */
 static u8 shop_slot_free(u8 idx) {
     u8 want = lvl_weapon_mount_slot[lvl_shop_ref[idx]];
     u8 w;
     if (want == 0u) return 1u;
+#ifdef LVL_MOUNT_COUNT
+    {
+        u8 plaetze = 0u, belegt = 0u, m;
+        for (m = 0u; m < (u8)LVL_MOUNT_COUNT; m++)
+            if (lvl_mount_group[m] == want) plaetze++;
+        for (w = 0u; w < (u8)LVL_WEAPON_COUNT; w++) {
+            if (!(g_player.weapons_active & ((u16)1u << w))) continue;
+            if (w == (u8)lvl_shop_ref[idx]) continue;
+            if (lvl_weapon_mount_slot[w] == want) belegt++;
+        }
+        return (u8)(belegt < plaetze);
+    }
+#else
     for (w = 0u; w < (u8)LVL_WEAPON_COUNT; w++) {
         if (!(g_player.weapons_active & ((u16)1u << w))) continue;
         if (w == (u8)lvl_shop_ref[idx]) continue;
         if (lvl_weapon_mount_slot[w] == want) return 0u;
     }
     return 1u;
+#endif
 }
 
 /* Item selected: the catalogue line plus the amount. */
