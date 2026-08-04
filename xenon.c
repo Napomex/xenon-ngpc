@@ -10644,9 +10644,45 @@ static void draw_sprites(void) {
                 }
             } else if (spr & 0x4000u) {          /* animated single strip */
                 u8 ai = sspr_anim_find(n);
-                s_num[0] = (ai != 0xFFu)
-                             ? lvl_sspr_anim_frames[ai][(u8)(g_wp_afrm[w] % lvl_sspr_anim_len[ai])]
-                             : n;
+                /* !! TWO KINDS OF MODULE ANIMATION, AND THE ORIGINAL KEEPS
+                   THEM APART. Read out of the anim lists in XENON2.EXE
+                   (format: (spriteId, duration)* 0x0000, handler [, target],
+                   see docs/formats/entities.md):
+                     LASER  CS:0x118e  8 frames x 1 tick, terminator
+                                       0000 41e2 118e - the standard handler
+                                       with the LIST START as its target, so
+                                       it runs round FOREVER, fire or no fire
+                     FLAMER CS:0x110c  4 frames x 1 tick, likewise
+                     REAR   CS:0x12f8  5 frames x duration ZERO - "static
+                                       until something external rewrites it",
+                                       i.e. driven by the shot
+                     CANNON CS:0x12ca  10 frames, loops back to frame 5: a
+                                       one-off run-in, then a cycle
+                   Ours drove EVERY module off the firing counter: play once,
+                   hold on the last frame, reset to 0 on release. For the rear
+                   gun that is right - the muzzle flash belongs to the shot.
+                   For the laser it was wrong three times over. It never
+                   repeated, it stood still while the finger was off the
+                   button, and it ignored the speed set in the tool, because
+                   g_wp_adiv is only ever written where a weapon RELOADS and
+                   a continuous weapon never goes through there (it leaves
+                   weapon_update early).
+                   The key is the BEHAVIOUR, not the weapon number: a
+                   continuous weapon has no per-shot cycle to stretch an
+                   animation over, so it uses the free-running counter -
+                   exactly what the metaanim path above already does for the
+                   cells of the cannon base. And exactly the two that loop in
+                   the original: WPB_LASER and WPB_FLAME. */
+                if (ai != 0xFFu) {
+                    u8 beh = wp_behavior[w];
+                    u8 fr  = (beh == (u8)WPB_LASER || beh == (u8)WPB_FLAME)
+                               ? (u8)((g_wpx_tick / fps_anim_div(lvl_sspr_anim_speed[ai]))
+                                      % lvl_sspr_anim_len[ai])
+                               : (u8)(g_wp_afrm[w] % lvl_sspr_anim_len[ai]);
+                    s_num[0] = lvl_sspr_anim_frames[ai][fr];
+                } else {
+                    s_num[0] = n;
+                }
                 c_dx[0] = 0; c_dy[0] = 0; c_fl[0] = 0u; cnt = 1u;
             } else {                             /* still image */
                 s_num[0] = n; c_dx[0] = 0; c_dy[0] = 0; c_fl[0] = 0u; cnt = 1u;
