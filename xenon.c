@@ -596,6 +596,7 @@ static const u8 lvl_tile_remap_B[LVL_TILE_DATA_COUNT] = {
 
 
 
+
 /* Active segment (0=A, 1=B) - set by lvl1_select_segment(), read by
    lvl1_put_cell / mapobj_apply_row / anim_update / build_lvl1. */
 static const u16 *g_lvl_tile_used;   /* u16 because raw indices go up to 293 */
@@ -869,6 +870,7 @@ static const u8 lvl1_terr_remap[LVL1_TERR_SEC_COUNT][LVL_TILE_DATA_COUNT] = {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
   },
 };
+
 
 
 
@@ -1698,8 +1700,15 @@ static u8      g_wpmod_oam0, g_wpmod_oam1;         /* dynamic, OAM_NONE = no slo
    done that on the left since it got its position; this makes it
    symmetrical rather than new. */
 #define WPX_FALLBACK_W2  3u
-#define WPX_FALLBACK_DX2 (24)
-#define WPX_FALLBACK_DY2 (10)
+/* 04.08.2026, nachgezogen: mit dem Schiff auf 16 px Breite ist die
+   Spiegelung nicht mehr 24, sondern 16 - sonst klafft eine 8-px-Luecke
+   zwischen Rumpf und Modul. Bemerkenswert: die Spiegelregel und die
+   Ableitung aus dem Original (tools/mount_convert.py, Platz 1) kommen beim
+   16er-Rumpf auf DIESELBE Zahl; beim 24er lagen sie noch 4 px auseinander.
+   dy 12 statt 10 kommt aus der Ableitung - das Modul ist 8 px hoch und
+   haengt damit halb unter dem Rumpf, wie die Pods im Original. */
+#define WPX_FALLBACK_DX2 (16)
+#define WPX_FALLBACK_DY2 (12)
 /* ---- Muzzle offset ----    The shot used to start exactly on the module
    corner (lvl_weapon_dx/dy), which    cannot be fine-tuned if the barrel
    is not in that corner. The tool now has a    muzzle dx/dy per weapon,
@@ -2718,6 +2727,7 @@ static const u16 spr_raw_remap[SPR_RAW_REMAP_SIZE] = {
     315, 316, 317, 318, 319, 320, 321, 322, 323, 324, 325, 326, 327, 328, 329, 330,
     331, 332, 333, 334, 0, 0, 0, 0, 0, 0, 335, 336, 337, 338,
 };
+
 
 
 
