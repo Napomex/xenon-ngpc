@@ -10609,7 +10609,15 @@ static void draw_sprites(void) {
                    moves ONLY while firing - that is where the muzzle flash
                    sits. All further cells (the base) run freely on
                    g_wpx_tick, so they keep moving when idle. Both frames
-                   have the same cell count, so one shared count is enough. */
+                   have the same cell count, so one shared count is enough.
+                   CONFIRMED AS WANTED (user, 04.08.): "the lower part runs
+                   always, the upper only on the shot". Do not talk yourself
+                   into the original's shape here - its cannon walk
+                   (CS:0x12ca) is ONE list of 10 frames that loops back to
+                   frame 5, so a one-off run-in followed by a cycle, which
+                   would need a loop-start field in the animation data we do
+                   not have. The split by cell reaches the same picture with
+                   the data the tool already delivers. */
                 u16 mi_fire = n, mi_free = n;
                 if (spr & 0x4000u) {
                     u8 h, len;
