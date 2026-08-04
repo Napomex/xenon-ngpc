@@ -1,0 +1,25 @@
+.SUFFIXES: .c .asm .rel .abs
+NAME = sndmix
+# sndmix.rel MUSS zuerst stehen: die consts aus carthdr.h bilden den
+# Cartridge-Kopf bei 0x200000.
+OBJS = \
+	sndmix.rel \
+	library.rel \
+	sounds.rel \
+
+
+$(NAME).ngp: makefile.mix ngpc.lcf $(OBJS)
+	tulink -la -o $(NAME).abs ngpc.lcf system.lib $(OBJS)
+	tuconv -Fs24 $(NAME).abs
+	s242ngp $(NAME).s24
+
+sndmix.rel: sndmix.c ngpc.h carthdr.h library.h sounds.h sfx_orig.h Musik/game_theme.c Musik/xenon_songs.c
+
+.c.rel:
+	cc900 -c -O3 $< -o $@
+
+.asm.rel:
+	asm900 -g $<
+
+clean:
+	del sndmix.rel sndmix.abs sndmix.s24 sndmix.map
