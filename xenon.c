@@ -1669,12 +1669,26 @@ static u8      g_wpmod_oam0, g_wpmod_oam1;         /* dynamic, OAM_NONE = no slo
 #define WPX_FALLBACK_W  2u
 #define WPX_FALLBACK_DX (-8)
 #define WPX_FALLBACK_DY (10)
-/* Laser: side slot 1 (the right one), because the cannon holds slot 0.
-   Module is a single 8x8 cell, so half of it is 4 - mount anchor (24,20)
-   minus (4,4). */
+/* Laser: the cannon's position MIRRORED to the other side of the ship
+   (user's decision, 04.08.). The derivation above puts the pair at (-6,12)
+   and (20,16); the cannon has kept its hand-tuned (-8,10) in map.h since
+   before that, so the laser is mirrored against THAT rather than against a
+   number the cannon does not use. Four pixels from the derived slot.
+
+   Mirroring is x only, y stays - exactly what the original does with its
+   own pair, (-26,+16) against (+26,+16). The cannon's right edge touches
+   the hull's left edge (-8 + 8 = 0), so the mirror image is the laser's
+   left edge on the hull's right edge: the drawn hull is 24 px wide, hence
+   24. The laser module is a single 8x8 cell, the cannon an 8x16 one - same
+   width, so the mirror is the same number for both.
+
+   The craft is then 40 px wide (-8..31) and sticks out over the screen
+   edge when the ship is pressed all the way to one side. The cannon has
+   done that on the left since it got its position; this makes it
+   symmetrical rather than new. */
 #define WPX_FALLBACK_W2  3u
-#define WPX_FALLBACK_DX2 (20)
-#define WPX_FALLBACK_DY2 (16)
+#define WPX_FALLBACK_DX2 (24)
+#define WPX_FALLBACK_DY2 (10)
 /* ---- Muzzle offset ----    The shot used to start exactly on the module
    corner (lvl_weapon_dx/dy), which    cannot be fine-tuned if the barrel
    is not in that corner. The tool now has a    muzzle dx/dy per weapon,
