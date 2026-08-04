@@ -359,7 +359,10 @@ static s16 fps_spd_s(s16 v) {
 #define BACK_PX_MAX 16u
 
 // --- Tile slots --
-#define TILE_BAR_BASE  148   /* 18 bar tiles at 148-165 (14 before the HUD came from the tool) */
+#define TILE_BAR_BASE  148   /* 19 bar tiles at 148-166: 8 bar + 10 digits + 1 empty bar cell.
+                                Was 14 before the HUD came from the tool (5 of them dead), and
+                                the comment here still said 18 while gfxBar[19][8] said 19 -
+                                the sprite pool range starts at 167 BECAUSE of the 19. */
 /* Level 1 terrain VRAM base; LVL_TILE_DATA_COUNT comes from the map export */
 #define LVL1_VRAM_BASE 254u
 
@@ -1082,15 +1085,15 @@ static void terr_sec_check(u16 row) {
    enemies, digits, worms, map object shots, thrusters, weapon system,
    pickups) comes from one shared dynamic pool, see oam_pool_*() below. */
 #define SPR_BULLET_0    6   /* 6-7: 2 physical slots for MAX_BULLETS=4 logical shots (slot i%2, phase i/2 - see draw_sprites) */
-/* Der Strahl bekommt KEINE festen Slots. Er hatte kurzzeitig welche, weil
-   er im dichten Band regelmaessig leer ausging - die Ursache war aber eine
-   andere: er verlangte einen ZUSAMMENHAENGENDEN Block (obwohl er gar nicht
-   kettet) und gab alles zurueck, wenn er nicht alles bekam. Beides ist weg;
-   seither holt er einzelne Slots und nimmt, was da ist. Gemessen sind ueber
-   die ganze Strecke mindestens 19 von 50 frei, und er braucht 4 bis 6.
-   Feste Slots waeren damit dauerhaft bezahlter Platz fuer einen Notfall,
-   den es nicht mehr gibt - der Vorrang aus dem Reservierungsblock in
-   draw_sprites() reicht (Nutzerentscheidung 04.08.). */
+/* The beam gets NO fixed slots. It had some for a while, because it kept
+   coming away empty in the dense band - but the cause was a different one:
+   it demanded a CONTIGUOUS block (although it does not chain at all) and
+   handed everything back when it could not get everything. Both are gone;
+   since then it takes individual slots and takes what is there. Measured
+   over the whole run, at least 19 of 50 are free and it needs 4 to 6.
+   Fixed slots would therefore be permanently paid-for room against an
+   emergency that no longer exists - the priority from the reservation
+   block in draw_sprites() is enough (user decision 04.08.). */
 #define BEAM_SLOTS_MAX  6u
 #define BULLET_PHYS_SLOTS 2u
 
@@ -1187,24 +1190,20 @@ static u8 oam_pool_alloc(void) {
    search is harmless there. Returns the base slot or OAM_NONE; on OAM_NONE
    the drawing path falls back to single-slot assignment, so the graphics
    stay correct either way, just without the chaining saving. */
-/* ============ Vorrang im OAM-Pool ============
-   Reihenfolge nach Nutzerentscheidung 04.08.:
-       Schiff  -  Schuesse  -  Items  -  Gegner  -  Triebwerk
-   Das Schiff hat feste Slots (SPR_SHIP) und taucht hier nicht auf; alles
-   andere teilt sich den Pool.
-
-   UMGESETZT ALS RESTMENGE, NICHT ALS REIHENFOLGE IM CODE. Wer erst spaeter
-   im Frame zugreift, hat sonst Pech - aber die Zeichenreihenfolge legt
-   zugleich die BILDREIHENFOLGE fest (kleinerer Slot = weiter vorn), und die
-   soll sich nicht aendern. Stattdessen laesst jede Stufe eine Restmenge fuer
-   die wichtigeren stehen: eine nachrangige Klasse bekommt nur etwas,
-   solange mehr als ihr Rest frei ist. Schuesse duerfen den Pool bis auf
-   null nehmen, das Triebwerk erst, wenn reichlich da ist.
-
-   Die Zahlen sind ein Kompromiss und keine Messung: gross genug, dass ein
-   fehlender Gegner nicht am Triebwerk scheitert, klein genug, dass im
-   ruhigen Level alles gezeichnet wird. Wer sie aendert, sollte
-   autoplay.py --oam davor und danach fahren. */
+/* ============ Priority in the OAM pool ============ Order by user
+   decision 04.08.: ship - shots - items - enemies - thruster The ship has
+   fixed slots (SPR_SHIP) and does not appear here; everything else shares
+   the pool. IMPLEMENTED AS A RESERVE, NOT AS AN ORDER IN THE CODE. Whoever
+   asks later in the frame would otherwise be out of luck - but the drawing
+   order also fixes the ORDER IN THE PICTURE (lower slot = further
+   forward), and that must not change. Instead every class leaves a reserve
+   standing for the more important ones: a lower-ranked class only gets
+   something while more than its reserve is free. Shots may take the pool
+   down to zero, the thruster only while there is plenty. The numbers are a
+   compromise, not a measurement: large enough that a missing enemy does
+   not lose out to the thruster, small enough that everything is drawn in a
+   quiet level. Whoever changes them should run autoplay.py --oam before
+   and after. */
 #define OAM_PRIO_SHOT   0u   /* Spielerschuesse, Strahl, Waffenmodule */
 #define OAM_PRIO_ITEM   1u   /* Pickups */
 #define OAM_PRIO_ENEMY  2u   /* Gegner, ihre Schuesse, Wuermer, Kriecher */
@@ -1849,15 +1848,15 @@ static void wp_mounts_assign(void) {
     u8 belegt[LVL_MOUNT_COUNT];
     u8 w, m;
     for (m = 0u; m < (u8)LVL_MOUNT_COUNT; m++) belegt[m] = 0u;
-    /* !! WER SCHON MONTIERT IST, BLEIBT WO ER IST. Der erste Anlauf verteilte
-       bei jeder Aenderung ALLES neu, in der Reihenfolge der Waffennummern -
-       und damit sprang eine laengst montierte Waffe zur Seite, sobald eine
-       mit kleinerer Nummer dazukam: "der Laser haengt zuerst am linken
-       Fluegel, beim Einsammeln der Kanone huepft er nach rechts"
-       (Nutzerbefund 04.08.). Im Original vergibt der Installer den ersten
-       freien Platz an die NEUE Waffe und ruehrt die bestehenden nicht an.
-       Also zwei Durchgaenge: erst die bestehenden Zuordnungen festhalten,
-       dann nur die neuen einsortieren. */
+    /* !! WHOEVER IS ALREADY MOUNTED STAYS WHERE THEY ARE. The first
+       attempt redistributed EVERYTHING on every change, in weapon-number
+       order - so a long-mounted weapon jumped sideways as soon as one with
+       a lower number arrived: "the laser hangs on the left wing first, and
+       when the cannon is collected it hops to the right" (user report
+       04.08.). In the original the installer hands the first free position
+       to the NEW weapon and does not touch the existing ones. So two
+       passes: hold the existing assignments first, then place only the new
+       ones. */
     for (w = 0u; w < (u8)LVL_WEAPON_COUNT; w++) {
         u8 alt = g_wp_mount[w];
         if (!(g_player.weapons_active & ((u16)1u << w))) { g_wp_mount[w] = 0xFFu; continue; }
@@ -1865,7 +1864,7 @@ static void wp_mounts_assign(void) {
             lvl_mount_group[alt] == lvl_weapon_mount_slot[w]) {
             belegt[alt] = 1u;            /* behaelt seinen Platz */
         } else {
-            g_wp_mount[w] = 0xFFu;       /* neu, oder Platz passt nicht mehr */
+            g_wp_mount[w] = 0xFFu;       /* new, or the position no longer fits */
         }
     }
     for (w = 0u; w < (u8)LVL_WEAPON_COUNT; w++) {
@@ -2990,7 +2989,7 @@ static void spr_tile_vram_init(void) {
        repeat:    1) 355-366 BELONGS to the bar shift system
        (bar_shift_vram_init occupies       355-453 for the HUD bar subpixel
        tiles) - visible as "life bar goes wild".    2) 148-159 BELONGS to
-       the TILE_BAR_BASE range (148-161) via       InstallTileSetAt() in
+       the TILE_BAR_BASE range (148-166) via       InstallTileSetAt() in
        bar_shift_build() - a FIFTH writer that a grep for       "0xA000u +"
        does NOT find, because it goes through a library.c helper
        rather than a direct pointer expression.    A full audit of every
@@ -3378,6 +3377,7 @@ static void spr_draw_s_single(u8 oam, u16 s_num, u8 x, u8 y) {
 #define beam_tail_flip lvl_beam_tail_flip
 #define beam_mid_h     lvl_beam_mid_h
 #define beam_len       lvl_beam_len
+#define beam_width     lvl_beam_width
 #define beam_weapon    lvl_beam_weapon
 #else
 #define BEAM_COUNT  1u
@@ -3403,24 +3403,50 @@ static const u8  beam_mid_h[BEAM_COUNT][BEAM_STAGES]     = { { 8u, 8u, 8u } };
    instead of 6. The single pixel is the conversion 65/2 from the original
    (weapons.md: 0x41 in the detached state). Rounded onto a multiple of the
    segment height. */
-static const u8  beam_len[BEAM_COUNT][BEAM_STAGES] = { { 16u, 32u, 32u } };
+static const u8  beam_len[BEAM_COUNT][BEAM_STAGES] = { { 32u, 32u, 32u } };
+/* Column width per stage, in pixels. From the original: the mask words at
+   DS:0x33be are ff00/fff0/ffff = 8/12/16 px, halved for the NGPC = 4/6/8.
+   The graphics carry exactly those widths already (measured out of
+   lvl_tile_data: the stage sprites fill columns 0..3, 0..5 and 0..7). */
+static const u8  beam_width[BEAM_COUNT][BEAM_STAGES] = { { 4u, 6u, 8u } };
 static const u8  beam_weapon[BEAM_COUNT] = { 3u };
 #endif
+
+/* ---- Length and width ----    !! THE WIDTH GROWS WITH THE STAGE, NOT THE
+   LENGTH (user decision 04.08.2026, and it is what the original does).
+   weapons.md on 1000:2439..245c: the damage box is 4p+8 px wide over a
+   length that is ALWAYS 0x41 rows. Up to 04.08. it was the other way round
+   here - three lengths, one 8 px column - which made stage 0 a stub and
+   left the three painted widths unused.
+
+   The length therefore no longer depends on the stage. It comes from the
+   LARGEST of the exported entries, floored to a whole multiple of the
+   segment height: the stage table still has three slots, and taking the
+   maximum keeps the beam at its full reach no matter which slot the tool
+   fills. The flooring is the OAM rule from 04.08. - 33 px are four full
+   segments plus one pixel, and that pixel costs a whole further sprite. */
+static u8 beam_length(u8 bi) {
+    u8 st, mh, best = 0u;
+    for (st = 0u; st < (u8)BEAM_STAGES; st++)
+        if (beam_len[bi][st] > best) best = beam_len[bi][st];
+    mh = beam_mid_h[bi][0];
+    if (mh < 4u) mh = 8u;
+    return (u8)((u8)(best / mh) * mh);
+}
+
+/* Width of the drawn column, and therefore of the damage box - the two are
+   the same number on purpose ("what you see is what hits", see
+   g_beam.top). 0 would mean an invisible beam, so it falls back to one
+   tile. */
+static u8 beam_hit_w(u8 bi, u8 stage) {
+    u8 w = beam_width[bi][stage];
+    if (w == 0u || w > 8u) w = 8u;
+    return w;
+}
 
 /* The beam reaches from the muzzle to the top edge of the playfield. */
 #define BEAM_TOP_Y   8u
 #define BEAM_MAX_SEG 14u          /* Kopf + Mitte + Ende, Obergrenze */
-/* Width of the damage box. ONE TILE, because that is how wide the column is
-   drawn - see the "what you see is what hits" note on g_beam.top.
-   !! IN THE ORIGINAL THE WIDTH IS WHAT GROWS WITH POWER, NOT THE LENGTH:
-   the column mask words at DS:0x33be are ff00/fff0/ffff = 8/12/16 px, and
-   the damage box is 4p+8 px wide over a length that is always 0x41 rows
-   (weapons.md 1000:2439..245c). Here the stages vary the LENGTH instead
-   (beam_len 16/32/32) and every stage draws an 8 px column. The tool's
-   "Beams" tab already carries the three widths; once map.h exports them,
-   this constant and beam_len should both come from there, and the box
-   should follow the width rather than the length. */
-#define BEAM_HIT_W   8u
 
 /* !! THE LASER IS A PROJECTILE, NOT AN ATTACHED BEAM. The first version
    drew it fixed upward from the muzzle - it then stuck to the ship and
@@ -3524,7 +3550,7 @@ static void beam_draw(u8 bi, u8 stage, u8 gun_x, u8 gun_y) {
     /* Segments from the beam length, not up to the screen edge. At the top
        edge it is clipped as well, so the head does not run into the status
        bar or off the screen. */
-    { u8 laenge = beam_len[bi][stage];
+    { u8 laenge = beam_length(bi);
       u8 platz  = (u8)((gun_y > (u8)BEAM_TOP_Y) ? (gun_y - (u8)BEAM_TOP_Y) : 0u);
       if (laenge > platz) laenge = platz;
       /* !! WHOLE SEGMENTS ONLY - THE DIVISION FLOORS ON PURPOSE. A single
@@ -3540,7 +3566,7 @@ static void beam_draw(u8 bi, u8 stage, u8 gun_x, u8 gun_y) {
       seg = (u8)(laenge / mh);
       /* The stage's FULL demand, unclipped - the block is sized from this,
          see below. */
-      seg_max = (u8)(beam_len[bi][stage] / mh); }
+      seg_max = (u8)(beam_length(bi) / mh); }
     if (seg > (u8)(BEAM_MAX_SEG - 2u)) seg = (u8)(BEAM_MAX_SEG - 2u);
     if (seg_max > (u8)(BEAM_MAX_SEG - 2u)) seg_max = (u8)(BEAM_MAX_SEG - 2u);
     if (seg_max < seg) seg_max = seg;
@@ -3558,15 +3584,15 @@ static void beam_draw(u8 bi, u8 stage, u8 gun_x, u8 gun_y) {
        block is now taken at full size on the first draw and kept to the
        end; surplus slots are only hidden, not released. That gives EXACTLY
        ONE attempt per beam, and it falls in the moment when most is free. */
-    /* Einen bereits reservierten Block behalten - der Vorrangblock in
-       draw_sprites() hat ihn geholt, und ihn hier wegzuwerfen hiesse, ihn
-       im naechsten Frame wieder anzufordern, wenn es voller ist. */
+    /* Keep a block that is already reserved - the priority block in
+       draw_sprites() fetched it, and throwing it away here would mean
+       asking for it again next frame, when things are fuller. */
     if (g_beam.oam == OAM_NONE) {
-        /* !! NIMM, WAS DA IST - GAR NICHTS IST DIE SCHLECHTESTE ANTWORT.
-           Einzelne Slots, kein zusammenhaengender Block (es wird nicht
-           gekettet, siehe oams[]). Unter zwei - Ende und Kopf - lohnt es
-           nicht; darueber wird die Saeule kuerzer gezeichnet und die
-           fehlenden Mittelteile flackern im Wechsel durch. */
+        /* !! TAKE WHAT IS THERE - NOTHING AT ALL IS THE WORST ANSWER.
+           Individual slots, not a contiguous block (nothing is chained,
+           see oams[]). Below two - tail and head - it is not worth it;
+           above that the column is drawn shorter and the missing middle
+           pieces flicker through in alternation. */
         { u8 noetig = (u8)(seg_max + 2u), habe = 0u;
           if (noetig > (u8)BEAM_SLOTS_MAX) noetig = (u8)BEAM_SLOTS_MAX;
           for (i = 0u; i < noetig; i++) {
@@ -3580,24 +3606,33 @@ static void beam_draw(u8 bi, u8 stage, u8 gun_x, u8 gun_y) {
           }
           g_beam.cnt = habe; g_beam.oam = g_beam.oams[0]; }
     }
-    /* Mehr Mittelteile, als Slots da sind, gibt es nicht. */
+    /* There are no more middle pieces than there are slots. */
     if ((u8)(seg + 2u) > g_beam.cnt) seg = (u8)(g_beam.cnt - 2u);
+
+    /* !! THE COLUMN IS LEFT-ALIGNED INSIDE ITS TILE, SO IT HAS TO BE
+       SHIFTED. Measured out of lvl_tile_data: the stage graphics fill
+       columns 0..3, 0..5 and 0..7 of the 8 px tile. Drawing them at the
+       muzzle x unchanged would leave the 4 px beam sitting against the
+       left edge of its slot, and the beam would appear to jump sideways
+       whenever the stage changed. Half the width to the left puts every
+       stage on the SAME centre - the muzzle. */
+    gun_x = (u8)(gun_x - (u8)(beam_hit_w(bi, stage) >> 1));
 
     /* bottom: the tail, usually the mirrored head */
     y = gun_y;
     spr_draw_s_single_flip(g_beam.oams[0], head, gun_x, y,
                            beam_tail_flip[bi][stage] ? (u8)SPR_VFLIP : 0u);
-    /* Die Mittelteile darueber - FLACKERND, wenn nicht alle Plaetze da sind.
-       Ein Mittelteil wird dann nur jeden zweiten Frame gezeichnet, zwei
-       teilen sich einen Slot. Bei 20 fps flackert das mit 10 Hz; auf einer
-       durchgehenden Saeule faellt das weit weniger auf als eine Luecke, und
-       ein halber Strahl ist besser als keiner. Dasselbe Mittel wie bei den
-       Spielerschuessen (siehe SPR_BULLET_0). */
-    { u8 voll = (u8)(beam_len[bi][stage] / mh);      /* was die Stufe eigentlich will */
+    /* The middle pieces above it - FLICKERING when not every place is
+       there. A middle piece is then drawn only every other frame, and two
+       share one slot. At 20 fps that flickers at 10 Hz; on a continuous
+       column it is far less noticeable than a gap, and half a beam is
+       better than none. The same remedy as for the player shots (see
+       SPR_BULLET_0). */
+    { u8 voll = (u8)(beam_length(bi) / mh);   /* what the beam wants in full */
       u8 phase = (u8)(g_flicker & 1u);
       u8 slot = 1u;
       if (voll > seg) {
-          /* zu wenig Slots: die fehlenden Stufen im Wechsel ueberspringen */
+          /* too few slots: skip the missing steps in alternation */
           for (i = 0u; i < voll && slot <= seg; i++) {
               y = (u8)(y - mh);
               if (((i + phase) % 2u) == 0u || (voll - i) <= (seg - slot + 1u))
@@ -3635,7 +3670,11 @@ static void beam_hide(void);
 static void beam_update(void) {
     u8 laenge;
     if (!g_beam.on) return;
-    laenge = beam_len[0][g_beam.stage];
+    /* The SAME length beam_draw uses. It read the stage table here while
+       the drawing had already moved to beam_length() - with stage 0 that
+       meant hiding at y <= 24 for a 16 px beam while a 32 px one was being
+       drawn, so the head would have been drawn into the status bar. */
+    laenge = beam_length(0u);
     if (g_beam.y <= (u8)(BEAM_TOP_Y + laenge)) {   /* head has left the top */
         beam_hide();
         return;
@@ -4589,7 +4628,7 @@ static void build_bg(void) {
 /* Draw the bar/separator at physical ring row `row`. SCR2 carries the
    graphic; SCR1 (the front plane) has to be cleared there or terrain shows
    through. */
-static void bar_pal_load(void);   /* Vorwaertsdeklaration, siehe C89/-w3 */
+static void bar_pal_load(void);   /* forward declaration, see C89/-w3 */
 
 static void bar_draw_at(u8 row) {
     volatile u16 *m1 = (volatile u16*)(0x9000u + (u16)row * 64u);
@@ -4603,26 +4642,26 @@ static void bar_draw_at(u8 row) {
                  (u16)(TILE_BAR_BASE + bi), barFlipDef[tx] ? 0x8000u : 0u);
         anim_grid_set(row, tx, 0u);  /* the bar is never animated - clear the leftover from the terrain prefill */
     }
-    /* !! DIE PALETTEN GEHOEREN ZUM NEUAUFBAU. Sie standen nur in
-       build_bar_assets(), und das laeuft einmal beim Spielstart und nach
-       dem Shop. Wann genau der Palettenschreiber greift, haengt am VBlank -
-       gemessen kam mal die eine, mal die andere an, und Palette 3 blieb
-       ganz aus: die Balkenzellen zeigten die richtige Kachel in fremden
-       Farben, im Bild "11111" (Nutzerbefund 04.08.). Wer die Leiste neu
-       zeichnet, bringt jetzt ihre Farben mit - das ist der einzige Ort, an
-       dem beides sicher zusammengehoert. */
+    /* !! THE PALETTES BELONG TO THE REBUILD. They used to sit only in
+       build_bar_assets(), and that runs once at game start and after the
+       shop. Exactly when the palette write lands depends on the VBlank -
+       measured, sometimes one arrived and sometimes another, and palette 3
+       stayed away entirely: the bar cells showed the right tile in foreign
+       colours, on screen "11111" (user report 04.08.). Whoever redraws the
+       bar now brings its colours along - this is the one place where the
+       two certainly belong together. */
     bar_pal_load();
     /* The bar row was (re)drawn, so invalidate the digit cache and let
        score_draw() put the score tiles back onto this row. */
     g_score_last_shown = 0xFFFFu;
 }
 // --- HUD bar: install palettes and tile sets (once per game_start) --
-/* Nur die vier Balkenpaletten. Getrennt von build_bar_assets(), weil sie
-   OEFTER gebraucht werden als die Kacheln: jeder Neuaufbau der Leiste muss
-   sie mitbringen, sonst zeigt die richtige Kachel fremde Farben. */
+/* Only the four bar palettes. Separate from build_bar_assets(), because
+   they are needed MORE OFTEN than the tiles: every rebuild of the bar has
+   to bring them along, or the right tile shows foreign colours. */
 static void bar_pal_load(void) {
-    /* !! PALETTEN NUR IM VBLANK SCHREIBEN. Ausserhalb nimmt der K2GE die
-       Schreibzugriffe nicht an, und sie verpuffen - lautlos. */
+    /* !! WRITE PALETTES ONLY INSIDE THE VBLANK. Outside it the K2GE does
+       not accept the writes and they evaporate - silently. */
     wait_vblank();
     SetPalette(SCR_2_PLANE, 1, 0x0000, 0x0A77, 0x0422, 0x0644); /* cool */
     SetPalette(SCR_2_PLANE, 2, 0x0000, 0x0249, 0x0028, 0x0004); /* warm */
@@ -4631,16 +4670,15 @@ static void bar_pal_load(void) {
 }
 
 static void build_bar_assets(void) {
-    /* !! PALETTEN NUR IM VBLANK SCHREIBEN. Ausserhalb nimmt der K2GE die
-       Schreibzugriffe nicht an, und sie verpuffen - lautlos. Genau das ist
-       hier passiert: von den vier Paletten unten kam KEINE an, Palette 3
-       blieb von Reset an schwarz, und die Balkenzellen zeigten deshalb die
-       richtige Kachel in fremden Farben - im Bild las sich das als "11111"
-       (Nutzerbefund 04.08., zweimal gemeldet).
-       Gemessen ab Reset: die Sollwerte tauchten im ganzen Lauf kein
-       einziges Mal in der Palettenspeicher auf.
-       spr_pal_load() macht es seit jeher richtig und hat den Hinweis im
-       Kommentar stehen; diese Funktion hier hatte ihn nie. */
+    /* !! WRITE PALETTES ONLY INSIDE THE VBLANK. Outside it the K2GE does
+       not accept the writes and they evaporate - silently. Which is
+       exactly what happened here: of the four palettes below NONE arrived,
+       palette 3 stayed black from reset onwards, and the bar cells
+       therefore showed the right tile in foreign colours - on screen that
+       read as "11111" (user report 04.08., reported twice). Measured from
+       reset: the target values never once appeared in palette RAM over the
+       whole run. spr_pal_load() has always done it right and carries the
+       note in its comment; this function never had it. */
     bar_pal_load();
     InstallTileSetAt(gfxBar, (u16)(19*8), TILE_BAR_BASE);
 }
@@ -9974,7 +10012,7 @@ static void mine_update(void) {
    that the tall box would be quietly cropped back to the bullet's reach. */
 static void beam_collide(void) {
     s16 bx, by, cy, filt;
-    u8  h, np, p, px, py, dmg, e, w, k;
+    u8  h, np, p, px, py, dmg, e, w, k, bw;
 
     /* Only while something is actually on screen. g_beam.on is already set
        at the spawn in weapon_update(), a frame before beam_draw() first
@@ -9984,7 +10022,11 @@ static void beam_collide(void) {
     if (!g_beam.on || g_beam.oam == OAM_NONE) return;
     if (g_beam.top >= g_beam.y) return;    /* nothing drawn yet */
 
-    bx   = (s16)g_beam.x;
+    /* The box is the DRAWN column: same left edge, same width. beam_draw
+       shifts the picture half a width to the left (see there), so the box
+       has to follow, or the two drift apart the moment the stage changes. */
+    bw   = beam_hit_w(0u, g_beam.stage);
+    bx   = (s16)((s16)g_beam.x - (s16)(bw >> 1));
     by   = (s16)g_beam.top;
     h    = (u8)((u8)(g_beam.y + 8u) - g_beam.top);
     cy   = (s16)(by + (s16)(h >> 1));
@@ -10009,7 +10051,10 @@ static void beam_collide(void) {
        the ship's. See rear_gun_damage/wp_gun_damage on why the two are not
        the same thing. */
     dmg  = (u8)((wp_power(g_beam.wp) + 1u) * 3u);
-    px   = (u8)(g_beam.x + 4u);
+    /* Centre of the drawn column. The shift by half a width and the
+       centring cancel out, so this is the muzzle x itself - which is
+       the point of centring the picture on it in the first place. */
+    px   = g_beam.x;
     /* Map objects and the boss are POINT tests, so the column has to be
        sampled instead of handed over as a box. Every 8 px: that is the
        height of a map object cell, and a coarser step would stride over
@@ -10060,7 +10105,7 @@ static void beam_collide(void) {
         if (!g_enemies[e].active || g_enemies[e].y >= CLIP_Y) continue;
         dyv = (s16)(cy - (s16)g_enemies[e].y);
         if (dyv > filt || dyv < (s16)-filt) continue;
-        if (rects_overlap_cached(bx, by, (u8)BEAM_HIT_W, h,
+        if (rects_overlap_cached(bx, by, bw, h,
                                   g_enemies[e].x, g_enemies[e].y,
                                   g_enemies[e].hz_dx, g_enemies[e].hz_dy,
                                   g_enemies[e].hz_w, g_enemies[e].hz_h))
@@ -10072,7 +10117,7 @@ static void beam_collide(void) {
         if (!g_metaenemies[e].active || g_metaenemies[e].y >= CLIP_Y) continue;
         dyv = (s16)(cy - (s16)g_metaenemies[e].y);
         if (dyv > filt || dyv < (s16)-filt) continue;
-        if (rects_overlap_cached(bx, by, (u8)BEAM_HIT_W, h,
+        if (rects_overlap_cached(bx, by, bw, h,
                                   g_metaenemies[e].x, g_metaenemies[e].y,
                                   g_metaenemies[e].hz_dx, g_metaenemies[e].hz_dy,
                                   g_metaenemies[e].hz_w, g_metaenemies[e].hz_h))
@@ -10090,7 +10135,7 @@ static void beam_collide(void) {
             if (!g_worms[w].seg[s].alive || g_worms[w].seg[s].y >= CLIP_Y) continue;
             dyv = (s16)(cy - (s16)g_worms[w].seg[s].y);
             if (dyv > filt || dyv < (s16)-filt) continue;
-            if (rects_overlap_cached(bx, by, (u8)BEAM_HIT_W, h,
+            if (rects_overlap_cached(bx, by, bw, h,
                                       g_worms[w].seg[s].x, g_worms[w].seg[s].y,
                                       g_worms[w].hz_dx, g_worms[w].hz_dy,
                                       g_worms[w].hz_w, g_worms[w].hz_h))
@@ -10101,7 +10146,7 @@ static void beam_collide(void) {
     for (e = 0u; e < (u8)LVL_WCRAWL_COUNT; e++) {
         TWallCrawler *wc = &g_wcrawlers[e];
         if (!wc->alive || !wc->on) continue;
-        if (rects_overlap_cached(bx, by, (u8)BEAM_HIT_W, h,
+        if (rects_overlap_cached(bx, by, bw, h,
                                   wc->x, wc->y, wc->hz_dx, wc->hz_dy,
                                   wc->hz_w, wc->hz_h))
             { wcrawl_hit(e, dmg); g_dbg_beam++; }
@@ -10156,10 +10201,14 @@ static void wallworms_collide(void) {
                because only this loop knows where a part actually sits: its
                position is the hole plus the path offset, not a field of its
                own. */
-            if (!hit && g_beam.on && g_beam.oam != OAM_NONE && g_beam.top < g_beam.y &&
-                rects_overlap((s16)g_beam.x, (s16)g_beam.top, (u8)BEAM_HIT_W,
-                              (u8)((u8)(g_beam.y + 8u) - g_beam.top), sx, sy, 8u, 8u))
-                hit = 1u;
+            /* Same box as beam_collide: left edge shifted half a width, so
+               the test follows the drawn column instead of a fixed tile. */
+            if (!hit && g_beam.on && g_beam.oam != OAM_NONE && g_beam.top < g_beam.y) {
+                u8 bmw = beam_hit_w(0u, g_beam.stage);
+                if (rects_overlap((s16)((s16)g_beam.x - (s16)(bmw >> 1)), (s16)g_beam.top, bmw,
+                                  (u8)((u8)(g_beam.y + 8u) - g_beam.top), sx, sy, 8u, 8u))
+                    hit = 1u;
+            }
 #if BENCH_NOKILL
             if (hit) continue;   /* benchmark: the wall worm segment survives (the bullet is consumed) */
 #else
@@ -10354,17 +10403,18 @@ static void draw_sprites(void) {
     if (!PROF_OFF(20))   /* collective sub-block 20, see the shots below */
     {
         u8 pk;
-        /* !! DER STRAHL ZUERST, VOR GEGNERN UND PICKUPS. Er braucht vier bis
-           sechs Slots am Stueck seiner Lebensdauer, und wer sie erst holt,
-           wenn der Rest sich bedient hat, geht im dichten Band leer aus -
-           genau daran ist der Laser "nach den Wuermern wieder tot" gewesen.
-           Feste Slots waeren die grobe Loesung gewesen; der Vorrang hier
-           kostet nichts und gibt sie frei, sobald der Strahl weg ist
-           (Nutzerentscheidung 04.08.: "leg die Prioritaet immer auf die
-           Schuesse, dann brauchen wir keine festen Slots").
-           NUR RESERVIEREN, nicht zeichnen - beam_draw() findet den Block
-           dann vor und laesst ihn stehen, die Reihenfolge im Bild bleibt
-           unveraendert. Dieselbe Bauart wie beim Waffenmodul darunter. */
+        /* !! THE BEAM FIRST, AHEAD OF ENEMIES AND PICKUPS. It needs four
+           to six slots for a whole stretch of its life, and whoever
+           fetches them only after the rest has helped itself comes away
+           empty in the dense band - which is exactly why the laser was
+           "dead again after the worms". Fixed slots would have been the
+           blunt solution; the priority here costs nothing and releases
+           them the moment the beam is gone (user decision 04.08.: "always
+           put the priority on the shots, then we do not need fixed
+           slots"). RESERVE ONLY, do not draw - beam_draw() then finds the
+           block already there and leaves it alone, so the order in the
+           picture is unchanged. Same construction as for the weapon module
+           below. */
         if (g_beam.on && g_beam.oam == OAM_NONE) {
             u8 bn = (u8)BEAM_SLOTS_MAX, bh = 0u, bs;
             for (bs = 0u; bs < bn; bs++) {
@@ -10428,9 +10478,9 @@ static void draw_sprites(void) {
             u8  rx    = (u8)(g_player.x + rdx);
 
             if (g_thrust_oam0 == OAM_NONE) {
-                /* Triebwerk ganz hinten: zwei kleine Flammen, die keinem
-                   Gegner den Platz nehmen duerfen. Faellt eine aus, sieht
-                   man es kaum - ein fehlender Gegner sofort. */
+                /* Thruster right at the back: two small flames that must
+                   not take an enemy's place. If one drops out it is barely
+                   noticeable - a missing enemy is noticeable at once. */
                 g_thrust_oam0 = oam_pool_alloc_p(OAM_PRIO_THRUST);
                 if (g_thrust_oam0 == OAM_NONE) goto thrust_done;   /* pool empty, try again next frame */
                 g_thrust_oam1 = oam_pool_alloc_p(OAM_PRIO_THRUST);
@@ -12347,6 +12397,44 @@ static void shop_sel_draw(void) {
 
 /* Is anything mounted in this catalogue slot? (only weapons can be
    mounted) */
+/* How many positions the weapon's group has. THE NUMBER IS WHAT SEPARATES
+   A SIDE WEAPON FROM A FRONT OR TAIL ONE, and it comes out of the data
+   rather than out of a hardwired group number: in the original the side
+   group has FOUR positions and front and tail one each (weapons.md sec.1,
+   DS:0x9134). That difference is the whole reason the two behave
+   differently - with several positions a second copy can be mounted, with
+   one there is nowhere to put it and only the power can grow. 0 = the
+   group has no position at all yet (the tool has not placed it). */
+static u8 wp_group_places(u8 w) {
+#ifdef LVL_MOUNT_COUNT
+    u8 want, m, n = 0u;
+    if (w >= (u8)LVL_WEAPON_COUNT) return 0u;
+    want = lvl_weapon_mount_slot[w];
+    if (want == 0u) return 0u;
+    for (m = 0u; m < (u8)LVL_MOUNT_COUNT; m++)
+        if (lvl_mount_group[m] == want) n++;
+    return n;
+#else
+    (void)w; return 0u;
+#endif
+}
+
+/* May this article be bought AGAIN, as a power-up? In the original that is
+   what a re-buy of a front or tail weapon is: "the SAME item id mounted
+   below its cap (re-buy = power-up)", while a SIDE item is only in stock
+   while a side position is free and never powers up (weapons.md sec.5,
+   stock check 1000:4fe3 / CALL 100e at 1000:50a8). The separating property
+   is the number of positions, see wp_group_places(). */
+static u8 shop_rebuy_powers(u8 idx) {
+    u8 w;
+    if (idx >= (u8)LVL_SHOP_COUNT || lvl_shop_type[idx] != 0u) return 0u;
+    w = (u8)lvl_shop_ref[idx];
+    if (w >= (u8)LVL_WEAPON_COUNT) return 0u;
+    if (!(g_player.weapons_active & ((u16)1u << w))) return 0u;   /* not mounted */
+    if (wp_group_places(w) > 1u) return 0u;                        /* side: another copy, not power */
+    return (u8)(g_wp_power[w] < wp_power_cap(w));
+}
+
 static u8 shop_item_owned(u8 idx) {
     if (idx >= (u8)LVL_SHOP_COUNT) return 0u;
     if (lvl_shop_type[idx] != 0u) return 0u;              /* 0 = weapon */
@@ -12713,11 +12801,26 @@ static u16 shop_price_of(u8 idx) {
     return lvl_shop_price[idx];
 }
 
-/* Sale value: mounted weapons only, stages cannot be sold. */
+/* Sale value: mounted weapons only, stages cannot be sold.
+   !! THE POWER IS PART OF THE PRICE. The original pays
+   (price + power x 2000) >> 1 (weapons.md sec.5, sell screen 1000:5119 /
+   5240). lvl_weapon_sell_price already IS the halved buy price, so the
+   halved power term is what has to be added: 2000 >> 1 = 1000 per stage.
+   Without it a weapon that had been powered up through several pickups
+   sold for exactly as much as one straight out of the shop - and buying it
+   back cost the full price again, so the power was silently thrown away.
+   Capped at u16, because the price is displayed and paid as one. */
 static u16 shop_sell_value(u8 idx) {
+    u16 basis, zulage;
     if (lvl_shop_type[idx] != 0u) return 0u;
     if (!shop_item_owned(idx)) return 0u;
-    return lvl_weapon_sell_price[lvl_shop_ref[idx]];
+    basis  = lvl_weapon_sell_price[lvl_shop_ref[idx]];
+    /* 16 bit throughout: a u32 multiply pulls in C9H_mullu, which is not
+       in the library - the link fails with "unresolved external symbol".
+       The power is 0..2 here, so 1000 per stage cannot leave the range. */
+    zulage = (u16)((u16)wp_power((u8)lvl_shop_ref[idx]) * 1000u);
+    if ((u16)(65535u - basis) < zulage) return 65535u;
+    return (u16)(basis + zulage);
 }
 
 /* Is the mount slot free? Weapons with the same lvl_weapon_mount_slot are
@@ -12795,9 +12898,18 @@ static u8 shop_do_buy(u8 idx) {
         shop_text_draw(lvl_shop_txt_out_of_stock); return 0u;
     }
     if (t == 0u) {
-        if (shop_item_owned(idx)) { shop_text_draw(lvl_shop_txt_no_room); return 0u; }
-        if (!shop_slot_free(idx)) { shop_text_draw(lvl_shop_txt_no_room); return 0u; }
-        g_player.weapons_active |= (u16)((u16)1u << lvl_shop_ref[idx]);
+        /* !! ALREADY MOUNTED IS NOT AUTOMATICALLY "NO ROOM". For a front or
+           tail weapon the original sells the same item again as a POWER-UP
+           as long as it is below its cap (weapons.md sec.5). Only a side
+           weapon is blocked, and even there only once every position of its
+           group is taken - a re-collect claims another one instead. */
+        if (shop_rebuy_powers(idx)) {
+            (void)wp_power_add((u8)lvl_shop_ref[idx], 1u);
+        } else {
+            if (shop_item_owned(idx)) { shop_text_draw(lvl_shop_txt_no_room); return 0u; }
+            if (!shop_slot_free(idx)) { shop_text_draw(lvl_shop_txt_no_room); return 0u; }
+            g_player.weapons_active |= (u16)((u16)1u << lvl_shop_ref[idx]);
+        }
     } else if (t == 1u) {
         /* firerate_stage used to run up UNCAPPED here. Beyond the last
            stage, fire_cd reads lvl_firerate_stage[stage] outside the
@@ -12843,6 +12955,10 @@ static u8 shop_do_sell(u8 idx) {
     val = shop_sell_value(idx);
     if (val == 0u) { shop_text_draw(lvl_shop_txt_out_of_stock); return 0u; }
     g_player.weapons_active &= (u16)(~((u16)1u << lvl_shop_ref[idx]));
+    /* The power goes with the weapon. Left standing it would come back for
+       free with the next copy - and it is already paid for in val above. */
+    if ((u8)lvl_shop_ref[idx] < (u8)LVL_WEAPON_COUNT)
+        g_wp_power[lvl_shop_ref[idx]] = 0u;
     g_cash += (u32)val;
     shop_text_draw(lvl_shop_txt_heres_cash);
     shop_cash_draw();
@@ -13476,18 +13592,17 @@ static u8  g_dma_dirty;
    logo palettes so the logo took on foreign colours. Now 0..3 belong to
    the logo, 4..13 to the alphabet and 14..15 to the shop font of the
    highscore page. */
-/* !! AB 5, NICHT AB 4 - SLOT 4 GEHOERT DER LEISTE. intro_load_pals()
-   schreibt von hier aus LVL_MENU_FONT_PAL_COUNT Paletten am Stueck, mit
-   Basis 4 also SCR2 4..15 - und 1..4 sind die Farben der HUD-Leiste
-   (barPal). Gemessen: beim Spielstart stimmen alle vier, nach dem ersten
-   Tod ist Palette 4 ueberschrieben und bleibt es; die Balkenzellen zeigten
-   danach die richtige Kachel in fremden Farben, im Bild "11111"
-   (Nutzerbefund 04.08., zweimal gemeldet).
-   Der Wiedereinstieg ruft zwar build_bar_assets() nach dem Uebergangsbild
-   auf, aber sich darauf zu verlassen heisst, jede kuenftige Stelle wieder
-   zu treffen. Ab 5 kann der Uebergang die Leiste gar nicht mehr anfassen.
-   PREIS: eine Menue-Palette weniger (5..15 statt 4..15, also 11 statt 12
-   von 13). Die Intro- und Uebergangsbilder kommen damit aus. */
+/* !! FROM 5, NOT FROM 4 - SLOT 4 BELONGS TO THE BAR. intro_load_pals()
+   writes LVL_MENU_FONT_PAL_COUNT palettes in one run from here, so with
+   base 4 that is SCR2 4..15 - and 1..4 are the colours of the HUD bar
+   (barPal). Measured: at game start all four are right, after the first
+   death palette 4 is overwritten and stays that way; the bar cells then
+   showed the right tile in foreign colours, on screen "11111" (user report
+   04.08., reported twice). Re-entry does call build_bar_assets() after the
+   transition screen, but relying on that means having to hit every future
+   site again. From 5 the transition cannot touch the bar at all. THE
+   PRICE: one menu palette fewer (5..15 instead of 4..15, so 11 of 13
+   instead of 12). The intro and transition screens manage with that. */
 #define INTRO_PAL_BASE    5u
 #define HS_FONT_PAL_BASE 14u
 #define INTRO_SRC_H  (INTRO_ROWS * 16u)
