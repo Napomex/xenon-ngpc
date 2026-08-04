@@ -2403,6 +2403,38 @@ static u16     g_row_map[32];
    bar_set_energy() never ran. */
 #define SHOP_TEST 0
 #define SHOP_TEST_CASH 20000u
+/* ===== HW_BENCH: THE STANDARD HARDWARE BENCHMARK. 1 = build the
+   measuring run, 0 for release.
+
+   Why it exists: every performance comparison so far was "the same scene,
+   by eye". That is not reproducible enough to tell a 5 % change from
+   noise, and it cost a wrong conclusion - the emulator said Thor's
+   optimisations were 1.5 % FASTER while the hardware said 8 % slower, and
+   the two numbers were not even measured over the same stretch.
+
+   THE RUN (user specification 04.08.2026):
+     1. the game starts straight in the first shop, with cannon, laser and
+        fire rate stage 3 already fitted. FITTED, NOT BOUGHT: a loadout
+        that has to be clicked together differs from run to run, and the
+        loadout is what determines the drawing load.
+     2. leave the shop - that OPENS the measuring window.
+     3. fly and hold fire until the smart bomb goes off. That CLOSES it.
+     4. the left three digits then stand still and show the result.
+
+   The number is VBLANKS PER 30 FRAMES over the whole window, the same unit
+   as the live display: 060 = clean 30 fps, 090 = clean 20 fps, and every
+   step above that is missing frames. LOWER IS BETTER. It stays running
+   while the window is open, so a display that never freezes means the
+   smart bomb has not been reached yet - not that the run is over. ===== */
+#define HW_BENCH 0
+/* Cannon and laser. The two indices come out of lvl_shop_desc, which
+   records what each weapon does: article 6 -> weapon 2 "fix, keine
+   Power-Stufen" is the cannon, article 8 -> weapon 3 "(Power+1) x 3 pro
+   Tick (Dauerstrahl)" is the laser (and lvl_beam_weapon[0] says 3 as
+   well). Written out here rather than hidden in the code, so a changed
+   weapon order can be followed. */
+#define HW_BENCH_WEAPONS ((u16)((1u << 2) | (1u << 3)))
+#define HW_BENCH_FIRERATE 3u
 #define BENCH_META_N 7u
 #if BENCH_META
 #define WARP_CHECKPOINT 7   /* boss arena = scroll end */
@@ -6473,6 +6505,33 @@ static u8  g_vbc_ring_i, g_vbc_ring_n;
 static u16 g_vbc_ring_tot;
 static u16 g_vbc_avg30;
 #endif
+#if HW_BENCH
+/* The benchmark window. Sums the 30-frame window values and counts them,
+   so the result is a plain u16/u16 division at the end - a 32-bit multiply
+   or divide is not in the library (C9H_mullu), and building the average
+   from raw VBlanks would need one.
+   zustand: 0 = not started, 1 = window open, 2 = closed and latched. */
+static u16 g_hwb_sum;
+static u16 g_hwb_n;
+static u16 g_hwb_erg;
+static u8  g_hwb_zustand;
+
+/* Every counter here is a static WITHOUT an initialiser - the emulator
+   zeroes RAM at start, REAL HARDWARE DOES NOT (see vbc_stats_reset). */
+static void hwb_reset(void) {
+    g_hwb_sum = 0u; g_hwb_n = 0u; g_hwb_erg = 0u; g_hwb_zustand = 0u;
+}
+
+static void hwb_open(void) {
+    g_hwb_sum = 0u; g_hwb_n = 0u; g_hwb_zustand = 1u;
+}
+
+static void hwb_close(void) {
+    if (g_hwb_zustand != 1u) return;
+    g_hwb_zustand = 2u;
+    g_hwb_erg = (u16)(g_hwb_n ? (u16)(g_hwb_sum / g_hwb_n) : 0u);
+}
+#endif
 /* MANDATORY INIT. Every counter here is a static WITHOUT an initialiser -
    the emulator zeroes RAM at start, REAL HARDWARE DOES NOT, and the
    emulator cannot show this by its very nature. It never showed on
@@ -6533,6 +6592,18 @@ static void fps_tick(u8 frame_ref) {
           n16 = (u16)g_vbc_ring_n;
           if (n16 == 0u) n16 = 1u;
           g_vbc_avg30 = (u16)(tot / n16); }
+#endif
+#if HW_BENCH
+        /* One completed 30-frame window. THE SUM IS CAPPED, not because a
+           real run gets near it but because a forgotten open window would
+           wrap silently and report a plausible wrong number: the shop-to-
+           smart-bomb stretch is a minute or two, so 40 to 80 windows at
+           about 110 - a run would have to be half an hour long to reach
+           60000. */
+        if (g_hwb_zustand == 1u && g_hwb_sum < 60000u) {
+            g_hwb_sum = (u16)(g_hwb_sum + g_vbc_acc);
+            g_hwb_n++;
+        }
 #endif
         g_vbc_acc    = 0u;
     }
@@ -9164,6 +9235,9 @@ static void wcrawls_collide(s16 srx, s16 sry, u8 srw, u8 srh, u8 ship_vuln) {
    BACKWARDS over the enemies: enemy_killed() can hand out a slot again
    immediately, forwards would hit a freshly written entry a second time. */
 static void smart_bomb_detonate(void) {
+#if HW_BENCH
+    hwb_close();   /* end of the measuring window - the display freezes */
+#endif
     u8 j, w, k;
     sfx(SFX_SMARTBOMB);   /* original effect 0x0B (1000:2ad0) */
     j = (u8)MAX_ENEMIES;
@@ -11661,6 +11735,12 @@ static void score_draw(void) {
 #else
           av = g_vbc_avg30;
 #endif
+#if HW_BENCH
+          /* Window closed: show the RESULT and nothing else. It has to
+             stand still, or the number read off the screen would be the
+             last 30 seconds instead of the whole run. */
+          if (g_hwb_zustand == 2u) av = g_hwb_erg;
+#endif
           if (av > 999u) av = 999u;
           digit[6] = (u8)(av / 100u);
           digit[5] = (u8)((av / 10u) % 10u);
@@ -12065,6 +12145,22 @@ static void game_start(void) {
     g_shop_entered = 0u;
     { u8 st; for (st = 0u; st < (u8)LVL_SHOP_TRIGGER_COUNT; st++) g_shop_fired[st] = 0u; }
     g_shop_delay   = 0u;
+#if HW_BENCH
+    /* The benchmark run starts in the first shop with a FITTED loadout -
+       see the HW_BENCH block for why it is fitted and not bought. Only on
+       the FIRST game_start(), or leaving the shop would land straight back
+       in it. The static is written rather than trusted: RAM is not cleared
+       at power-on. */
+    { static u8 hwb_done;
+      if (hwb_done != 1u) { hwb_done = 1u;
+          hwb_reset();
+          g_player.weapons_active |= (u16)HW_BENCH_WEAPONS;
+          g_player.firerate_stage = (u8)HW_BENCH_FIRERATE;
+          if (g_player.firerate_stage > (u8)(LVL_FIRERATE_STAGE_COUNT - 1u))
+              g_player.firerate_stage = (u8)(LVL_FIRERATE_STAGE_COUNT - 1u);
+          g_shop_delay = 30u;   /* a few frames of play, so the entry is the normal one */
+      } }
+#endif
 #if SHOP_TEST
     /* Test aid: into the shop right away, with money. Only on the FIRST
        game_start() - otherwise leaving the shop lands straight back in it
@@ -13064,6 +13160,15 @@ static void level_loop_restart(void) {
    score, map object and group state stay untouched - only the terrain
    streaming is set up afresh. */
 static void shop_resume(void) {
+#if HW_BENCH
+    /* Leaving the shop opens the measuring window. Here rather than at the
+       state change, because this is where the world is actually rebuilt -
+       the uploads below are part of the frame the player sees first, and
+       counting from a moment before them would put a one-off cost into
+       every run. */
+    hwb_open();
+    vbc_stats_reset();
+#endif
     /* The shop has overwritten the ENTIRE character RAM with its own
        tiles, and sprites and the bar live there too. So before returning
        to the game, not only the terrain (build_lvl1 below) but also the
