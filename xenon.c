@@ -597,6 +597,7 @@ static const u8 lvl_tile_remap_B[LVL_TILE_DATA_COUNT] = {
 
 
 
+
 /* Active segment (0=A, 1=B) - set by lvl1_select_segment(), read by
    lvl1_put_cell / mapobj_apply_row / anim_update / build_lvl1. */
 static const u16 *g_lvl_tile_used;   /* u16 because raw indices go up to 293 */
@@ -870,6 +871,7 @@ static const u8 lvl1_terr_remap[LVL1_TERR_SEC_COUNT][LVL_TILE_DATA_COUNT] = {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
   },
 };
+
 
 
 
@@ -2727,6 +2729,7 @@ static const u16 spr_raw_remap[SPR_RAW_REMAP_SIZE] = {
     315, 316, 317, 318, 319, 320, 321, 322, 323, 324, 325, 326, 327, 328, 329, 330,
     331, 332, 333, 334, 0, 0, 0, 0, 0, 0, 335, 336, 337, 338,
 };
+
 
 
 

@@ -1861,14 +1861,14 @@ const u8  lvl_rotset_flip[3][8] = {
    Metasprite-Ecke oben links, UNABHAENGIG von Bewegung/Rotation - bei Rotationssatz-
    Sprites (Wuermer) gilt dieselbe Zone fuer alle 8 Richtungen (Vereinfachung). Ein
    Eintrag kann MEHRERE Rechtecke haben (Kollision = Treffer in IRGENDEINEM davon). */
-#define LVL_HITZONE_COUNT 19
-const u16 lvl_hitzone_spr[19] = { 0x5005, 0x1000, 0x1001, 0x1002, 0x1003, 0x1004, 0x1005, 0xC02F, 0xC037, 0xC048, 0xC064, 0xC06C, 0xC073, 0xC07A, 0xC081, 0xC088, 0xC090, 0x500B, 0x5012 };
-const u16 lvl_hitzone_off[19] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18 };
-const u8  lvl_hitzone_count[19] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
-const s16 lvl_hitzone_dx[19] = { 1, 5, 5, 5, 5, 5, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 4, 1 };
-const s16 lvl_hitzone_dy[19] = { 8, 0, 0, 0, 0, 0, 8, 1, 1, 4, 0, 0, 0, 0, 0, 0, 0, 3, 0 };
-const u8  lvl_hitzone_w[19] = { 6, 6, 6, 6, 6, 6, 6, 6, 6, 8, 8, 8, 8, 8, 8, 8, 8, 8, 7 };
-const u8  lvl_hitzone_h[19] = { 8, 21, 20, 20, 20, 20, 8, 6, 7, 4, 8, 8, 8, 8, 8, 8, 8, 11, 16 };
+#define LVL_HITZONE_COUNT 20
+const u16 lvl_hitzone_spr[20] = { 0x5005, 0x1000, 0x1001, 0x1002, 0x1003, 0x1004, 0x1005, 0xC02F, 0xC037, 0xC048, 0xC064, 0xC06C, 0xC073, 0xC07A, 0xC081, 0xC088, 0xC090, 0x500B, 0x5012, 0x5018 };
+const u16 lvl_hitzone_off[20] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19 };
+const u8  lvl_hitzone_count[20] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
+const s16 lvl_hitzone_dx[20] = { 1, 5, 5, 5, 5, 5, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 4, 1, 3 };
+const s16 lvl_hitzone_dy[20] = { 8, 0, 0, 0, 0, 0, 8, 1, 1, 4, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0 };
+const u8  lvl_hitzone_w[20] = { 6, 6, 6, 6, 6, 6, 6, 6, 6, 8, 8, 8, 8, 8, 8, 8, 8, 8, 7, 10 };
+const u8  lvl_hitzone_h[20] = { 8, 15, 15, 15, 15, 15, 8, 6, 7, 4, 8, 8, 8, 8, 8, 8, 8, 11, 16, 16 };
 
 /* ============ Bewegungspfade (screen-absolut, relativ zum Spawn-Punkt) ============ */
 /* Jede Zeile = eine (Pfad,Tempo)-VARIANTE, nicht 1:1 die im Tool definierten Pfade -
@@ -10917,6 +10917,27 @@ const u8 lvl_weapon_bullet_flip[11] = { 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 const u8 lvl_weapon_rate[11] = { 10, 26, 26, 20, 26, 26, 26, 26, 99, 26, 40 };
 const u8 lvl_weapon_damage[11] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
 const u8 lvl_weapon_mount_slot[11] = { 1, 2, 2, 2, 2, 3, 4, 4, 1, 5, 3 };
+
+/* ============ Montageplaetze am Schiff ============ */
+/* dx/dy = Pixelversatz von der linken oberen Schiffsecke zum ANKERPUNKT des
+   Platzes. Das Modul wird so gezeichnet, dass sein Bezugspunkt
+   (lvl_weapon_anchor_dx/dy) auf diesem Anker liegt:
+     modul_x = schiff_x + lvl_mount_dx[p] - lvl_weapon_anchor_dx[w]
+   Belegung: erster FREIER Platz, dessen lvl_mount_group dem
+   lvl_weapon_mount_slot der Waffe entspricht. Gruppe voll -> nicht montierbar
+   (kein Rauswurf), wie bei den Seitenwaffen des Originals. */
+#define LVL_MOUNT_COUNT 6
+const s8 lvl_mount_dx[6] = { -4, 20, -15, 29, 8, 8 };
+const s8 lvl_mount_dy[6] = { 12, 11, 16, 16, -4, 18 };
+const u8 lvl_mount_group[6] = { 2, 2, 2, 2, 0, 1 };
+/* Platz 0: "Links 1" - Gruppe 2 (Seite), (-4,12) */
+/* Platz 1: "Rechts 1" - Gruppe 2 (Seite), (20,11) */
+/* Platz 2: "Links 2" - Gruppe 2 (Seite), (-15,16) */
+/* Platz 3: "Rechts 2" - Gruppe 2 (Seite), (29,16) */
+/* Platz 4: "Front" - Gruppe 0 (Front), (8,-4) */
+/* Platz 5: "Heck" - Gruppe 1 (Heck), (8,18) */
+const s8 lvl_weapon_anchor_dx[11] = { 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4 };
+const s8 lvl_weapon_anchor_dy[11] = { 4, 4, 8, 4, 4, 4, 4, 4, 4, 4, 4 };
 #define LVL_WEAPON_MOUNT_SLOT_COUNT 5  /* 1="Heck", 2="Seite", 3="Heck-Pod", 4="Heck-Pet", 5="Vorne" */
 const u16 lvl_weapon_buy_price[11] = { 1000, 1000, 4000, 4000, 4000, 1000, 1200, 4500, 6000, 5000, 5500 };
 const u16 lvl_weapon_sell_price[11] = { 500, 500, 2000, 2000, 2000, 500, 600, 2250, 3000, 2500, 2750 };
