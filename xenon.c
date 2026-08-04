@@ -3231,8 +3231,20 @@ static const u8  beam_weapon[BEAM_COUNT] = { 3u };
    behaves like a normal shot, except that when drawn it consists of head,
    stacked middle and tail. */
 static struct {
-    u8 oam;      /* erster Slot des Kettenblocks, OAM_NONE = keiner */
-    u8 cnt;      /* how many slots the block has */
+    u8 oam;      /* oams[0], oder OAM_NONE = kein Block vergeben */
+    /* !! EINZELNE SLOTS, KEIN ZUSAMMENHAENGENDER BLOCK. Frueher stand hier
+       ein Basisslot und die Segmente lagen auf oam+0..oam+cnt-1, angefordert
+       ueber oam_pool_alloc_run(). Der Kommentar begruendete das mit dem
+       Chaining - aber gezeichnet wird mit spr_draw_s_single(), und dort ist
+       das Ketten-Bit von SetSprite() NULL: die Segmente tragen ihre ABSOLUTE
+       Position, es wurde nie gekettet. Die Forderung nach zusammenhaengenden
+       Slots war also grundlos, und sie kostete den Strahl regelmaessig ganz:
+       gemessen scheiterte sie in 12 % der Frames, waehrend noch 31 von 56
+       Slots FREI waren - der Pool ist nicht voll, er ist zerstueckelt, und
+       zwischen den belegten liegen selten drei am Stueck. Im Bild sah das
+       aus wie "der Laser schiesst keinen Laser" (Nutzerbefund 04.08.). */
+    u8 oams[BEAM_MAX_SEG];
+    u8 cnt;      /* wie viele Slots vergeben sind */
     u8 on;       /* fliegt gerade einer? */
     u8 x, y;     /* Position des UNTEREN Endes */
     u8 stage;    /* stage, decides length and graphics */
@@ -3264,7 +3276,7 @@ static void spr_draw_s_single_flip(u8 oam, u16 s_num, u8 x, u8 y, u8 flip) {
 static void beam_draw(u8 bi, u8 stage, u8 gun_x, u8 gun_y) {
     /* gun_x/gun_y are the position of the LOWER end - for the flying laser
        that is g_beam.x/y, not the muzzle. */
-    u8 mh, seg, i, y, first;
+    u8 mh, seg, seg_max, i, y, first;
     u16 mid, head;
     /* !! GEOMETRY INVALID UNTIL SOMETHING IS ACTUALLY DRAWN. Every return
        below leaves the beam invisible for this frame while beam_update()
@@ -3281,8 +3293,21 @@ static void beam_draw(u8 bi, u8 stage, u8 gun_x, u8 gun_y) {
     if (bi >= (u8)BEAM_COUNT || stage >= (u8)BEAM_STAGES) return;
     mh   = beam_mid_h[bi][stage];
     if (mh < 4u) mh = 8u;
-    mid  = beam_mid_spr[bi][stage];
-    head = beam_head_spr[bi][stage];
+    /* !! DIE VERWEISE AUS map.h SIND KODIERT, DIE DES RUECKFALLS NICHT.
+       Der Strahlen-Reiter schreibt sie wie ueberall im Export: 0x8000|n fuer
+       ein Standbild, 0xFFFF fuer "nicht gesetzt". Der Rueckfall im Code trug
+       dagegen die ROHE S-Nummer (287, 286, ...), und spr_draw_s_single()
+       rechnet s_num-1 und greift damit in lvl_sspr_a_idx.
+       Ungemaskiert wurde aus 0x811F die 33054 - ein Griff weit hinter das
+       Ende der Tabelle. Der Strahl "flog" dann zwar (die Zustandswerte
+       stimmten), zeichnete aber Muell bzw. nichts: genau der Nutzerbefund
+       "der Laser schiesst keinen Laser" vom 04.08., der erst auftrat, als
+       der Export die Tabellen erstmals mitlieferte und den Rueckfall
+       abschaltete. Maskieren macht beide Quellen gleich - eine rohe Nummer
+       ueberlebt das Maskieren unveraendert. */
+    mid  = (u16)(beam_mid_spr[bi][stage]  & 0x01FFu);
+    head = (u16)(beam_head_spr[bi][stage] & 0x01FFu);
+    if (beam_mid_spr[bi][stage] == 0xFFFFu || beam_head_spr[bi][stage] == 0xFFFFu) return;
     if (mid == 0u || head == 0u) return;      /* not assigned in the tool yet */
 
     /* Segments from the beam length, not up to the screen edge. At the top
@@ -3301,34 +3326,63 @@ static void beam_draw(u8 bi, u8 stage, u8 gun_x, u8 gun_y) {
          therefore carries 32, and the division makes sure the rule also
          holds for whatever the tool exports into lvl_beam_len later
          (tools/check_beam_len.mjs says so before the build). */
-      seg = (u8)(laenge / mh); }
+      seg = (u8)(laenge / mh);
+      /* Der VOLLE Bedarf der Stufe, ungekappt - danach wird der Block
+         bemessen, siehe unten. */
+      seg_max = (u8)(beam_len[bi][stage] / mh); }
     if (seg > (u8)(BEAM_MAX_SEG - 2u)) seg = (u8)(BEAM_MAX_SEG - 2u);
+    if (seg_max > (u8)(BEAM_MAX_SEG - 2u)) seg_max = (u8)(BEAM_MAX_SEG - 2u);
+    if (seg_max < seg) seg_max = seg;
 
-    /* Request the block: tail + middles + head. If that fails, nothing is
-       drawn this frame - better no beam than a torn one made of individual
-       slots. */
-    if (g_beam.oam == OAM_NONE || g_beam.cnt != (u8)(seg + 2u)) {
+    /* !! EINMAL ANFORDERN, FUER DIE GANZE FLUGBAHN - UND ZWAR DEN VOLLEN
+       BEDARF DER STUFE. Vorher richtete sich der Block nach der GEKAPPTEN
+       Laenge, und die aendert sich, sobald der Strahl den oberen Rand
+       erreicht: er gab seinen Block zurueck und forderte einen kleineren an.
+       Genau in diesem Moment kann oam_pool_alloc_run() scheitern, und der
+       Strahl war fuer den Rest seines Lebens weg.
+       Gemessen: in 12 % der Frames stand "Strahl an" ohne jeden Block - und
+       dabei waren noch 31 von 56 Slots FREI. Der Pool ist also nicht voll,
+       er ist ZERSTUECKELT: eine Kette braucht zusammenhaengende Slots, und
+       zwischen 25 belegten liegen selten drei am Stueck. Im Bild sah das aus
+       wie "der Laser schiesst keinen Laser" (Nutzerbefund 04.08.).
+       Jetzt wird der Block bei der ersten Zeichnung in voller Groesse
+       geholt und bis zum Ende behalten; ueberzaehlige Slots werden nur
+       versteckt, nicht freigegeben. Damit gibt es je Strahl GENAU EINEN
+       Versuch, und der faellt in den Moment, in dem am meisten frei ist. */
+    if (g_beam.oam == OAM_NONE || g_beam.cnt != (u8)(seg_max + 2u)) {
         if (g_beam.oam != OAM_NONE) {
-            for (i = 0u; i < g_beam.cnt; i++) UnsetSprite((u8)(g_beam.oam + i));
-            for (i = 0u; i < g_beam.cnt; i++) oam_pool_free((u8)(g_beam.oam + i));
+            for (i = 0u; i < g_beam.cnt; i++) UnsetSprite(g_beam.oams[i]);
+            for (i = 0u; i < g_beam.cnt; i++) oam_pool_free(g_beam.oams[i]);
             g_beam.oam = OAM_NONE; g_beam.cnt = 0u;
         }
-        first = oam_pool_alloc_run((u8)(seg + 2u));
-        if (first == OAM_NONE) return;
-        g_beam.oam = first; g_beam.cnt = (u8)(seg + 2u);
+        { u8 noetig = (u8)(seg_max + 2u), habe = 0u;
+          for (i = 0u; i < noetig; i++) {
+              first = oam_pool_alloc();
+              if (first == OAM_NONE) break;
+              g_beam.oams[habe++] = first;
+          }
+          if (habe < noetig) {          /* alles zurueck, lieber gar nichts */
+              for (i = 0u; i < habe; i++) oam_pool_free(g_beam.oams[i]);
+              return;
+          }
+          g_beam.cnt = noetig; g_beam.oam = g_beam.oams[0]; }
     }
 
     /* bottom: the tail, usually the mirrored head */
     y = gun_y;
-    spr_draw_s_single_flip(g_beam.oam, head, gun_x, y,
+    spr_draw_s_single_flip(g_beam.oams[0], head, gun_x, y,
                            beam_tail_flip[bi][stage] ? (u8)SPR_VFLIP : 0u);
     /* the middle pieces above it */
     for (i = 0u; i < seg; i++) {
         y = (u8)(y - mh);
-        spr_draw_s_single((u8)(g_beam.oam + 1u + i), mid, gun_x, y);
+        spr_draw_s_single(g_beam.oams[1u + i], mid, gun_x, y);
     }
     /* the head at the very top */
-    spr_draw_s_single((u8)(g_beam.oam + 1u + seg), head, gun_x, (u8)(y - mh));
+    spr_draw_s_single(g_beam.oams[1u + seg], head, gun_x, (u8)(y - mh));
+    /* Was der Block mehr hat, als die gekappte Laenge braucht: verstecken,
+       NICHT freigeben - sonst zerfaellt er und die naechste Anforderung
+       findet keinen zusammenhaengenden Platz mehr. */
+    for (i = (u8)(seg + 2u); i < g_beam.cnt; i++) UnsetSprite(g_beam.oams[i]);
     g_beam.top = (u8)(y - mh);
     g_beam.on = 1u;
 }
@@ -3361,8 +3415,8 @@ static void beam_hide(void) {
     u8 i;
     if (g_beam.oam == OAM_NONE) return;
     for (i = 0u; i < g_beam.cnt; i++) {
-        UnsetSprite((u8)(g_beam.oam + i));
-        oam_pool_free((u8)(g_beam.oam + i));
+        UnsetSprite(g_beam.oams[i]);
+        oam_pool_free(g_beam.oams[i]);
     }
     g_beam.oam = OAM_NONE; g_beam.cnt = 0u; g_beam.on = 0u;
 }
