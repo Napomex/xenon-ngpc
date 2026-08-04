@@ -2418,14 +2418,21 @@ static u16     g_row_map[32];
         that has to be clicked together differs from run to run, and the
         loadout is what determines the drawing load.
      2. leave the shop - that OPENS the measuring window.
-     3. fly and hold fire until the smart bomb goes off. That CLOSES it.
+     3. fly from there to row HW_BENCH_ROW_END with fire held. Reaching
+        that row CLOSES it.
      4. the left three digits then stand still and show the result.
+
+   THE END IS A ROW, NOT AN EVENT. The first version closed on the smart
+   bomb, which is the reward for clearing group 59 - so the run ended only
+   if the player really cleared that group, and a missed one left the
+   display running for ever. A row is reached by flying, every time (user
+   correction 04.08.).
 
    The number is VBLANKS PER 30 FRAMES over the whole window, the same unit
    as the live display: 060 = clean 30 fps, 090 = clean 20 fps, and every
    step above that is missing frames. LOWER IS BETTER. It stays running
-   while the window is open, so a display that never freezes means the
-   smart bomb has not been reached yet - not that the run is over. ===== */
+   while the window is open, so a display that never freezes means the end
+   row has not been reached yet - not that the run is over. ===== */
 #define HW_BENCH 0
 /* Cannon and laser. The two indices come out of lvl_shop_desc, which
    records what each weapon does: article 6 -> weapon 2 "fix, keine
@@ -2435,6 +2442,10 @@ static u16     g_row_map[32];
    weapon order can be followed. */
 #define HW_BENCH_WEAPONS ((u16)((1u << 2) | (1u << 3)))
 #define HW_BENCH_FIRERATE 3u
+/* End of the measuring window. The start is lvl_shop_trigger_row[0], the
+   row of the first shop (123 today), so the run covers 67 rows - through
+   the wall worms and the dense band, which is where it gets tight. */
+#define HW_BENCH_ROW_END 190u
 #define BENCH_META_N 7u
 #if BENCH_META
 #define WARP_CHECKPOINT 7   /* boss arena = scroll end */
@@ -9235,9 +9246,6 @@ static void wcrawls_collide(s16 srx, s16 sry, u8 srw, u8 srh, u8 ship_vuln) {
    BACKWARDS over the enemies: enemy_killed() can hand out a slot again
    immediately, forwards would hit a freshly written entry a second time. */
 static void smart_bomb_detonate(void) {
-#if HW_BENCH
-    hwb_close();   /* end of the measuring window - the display freezes */
-#endif
     u8 j, w, k;
     sfx(SFX_SMARTBOMB);   /* original effect 0x0B (1000:2ad0) */
     j = (u8)MAX_ENEMIES;
@@ -12159,6 +12167,10 @@ static void game_start(void) {
           if (g_player.firerate_stage > (u8)(LVL_FIRERATE_STAGE_COUNT - 1u))
               g_player.firerate_stage = (u8)(LVL_FIRERATE_STAGE_COUNT - 1u);
           g_shop_delay = 30u;   /* a few frames of play, so the entry is the normal one */
+          /* The real row trigger must not fire a second time - the run
+             starts ON its row (see hwb_row below), and crossing it would
+             put the player back in the shop mid-measurement. */
+          if ((u8)LVL_SHOP_TRIGGER_COUNT > 0u) g_shop_fired[0] = 1u;
       } }
 #endif
 #if SHOP_TEST
@@ -13161,6 +13173,20 @@ static void level_loop_restart(void) {
    streaming is set up afresh. */
 static void shop_resume(void) {
 #if HW_BENCH
+    /* !! THE RUN HAS TO START AT THE REAL SHOP, NOT AT ROW 0. shop_resume()
+       puts the player back on the row they entered the shop from, and the
+       benchmark's shop is armed at game start - so row 0, and leaving it
+       landed at the beginning of the level (user report 04.08.: "I go to
+       exit and I am back at the start"). Measured from there the window
+       would cover the whole level instead of the stretch the run is
+       defined over. lvl_shop_trigger_row[0] is where the first shop really
+       stands (row 123); the smart bomb that closes the window is the
+       reward for group 59, whose wave is at row 189. */
+    { static u8 hwb_row;
+      if (hwb_row != 1u) { hwb_row = 1u;
+          if ((u8)LVL_SHOP_TRIGGER_COUNT > 0u)
+              g_shop_return_row = lvl_shop_trigger_row[0];
+      } }
     /* Leaving the shop opens the measuring window. Here rather than at the
        state change, because this is where the world is actually rebuilt -
        the uploads below are part of the frame the player sees first, and
@@ -15102,6 +15128,13 @@ void main(void) {
               if (rn_phase == 0u && prow >= 8u) { rn_phase = 1u; boss_cash_rain(); }
               else if (rn_phase == 1u) { player_damage(255u); }   /* must have no effect while the rain is running */
             }
+#endif
+#if HW_BENCH
+            /* End of the measuring window: the row, checked every frame.
+               hwb_close() only takes the first one, so it costs a compare
+               after that. */
+            { u16 brow = (u16)(g_scroll_y >> 3);
+              if (brow >= (u16)HW_BENCH_ROW_END) hwb_close(); }
 #endif
 #if PICKUP_TEST
             /* proof script, see PICKUP_TEST. */
