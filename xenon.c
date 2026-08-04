@@ -1702,13 +1702,13 @@ static u8      g_wpmod_oam0, g_wpmod_oam1;         /* dynamic, OAM_NONE = no slo
    done that on the left since it got its position; this makes it
    symmetrical rather than new. */
 #define WPX_FALLBACK_W2  3u
-/* 04.08.2026, nachgezogen: mit dem Schiff auf 16 px Breite ist die
-   Spiegelung nicht mehr 24, sondern 16 - sonst klafft eine 8-px-Luecke
-   zwischen Rumpf und Modul. Bemerkenswert: die Spiegelregel und die
-   Ableitung aus dem Original (tools/mount_convert.py, Platz 1) kommen beim
-   16er-Rumpf auf DIESELBE Zahl; beim 24er lagen sie noch 4 px auseinander.
-   dy 12 statt 10 kommt aus der Ableitung - das Modul ist 8 px hoch und
-   haengt damit halb unter dem Rumpf, wie die Pods im Original. */
+/* 04.08.2026, pulled along: with the ship down to 16 px wide the mirror is
+   no longer 24 but 16 - otherwise an 8 px gap opens between hull and
+   module. Worth noting: on the 16 px hull the mirror rule and the
+   derivation from the original (tools/mount_convert.py, side slot 1)
+   arrive at the SAME number; on the 24 px one they were still 4 px apart.
+   dy 12 instead of 10 comes from the derivation - the module is 8 px tall
+   and therefore hangs half below the hull, like the pods in the original. */
 #define WPX_FALLBACK_DX2 (16)
 #define WPX_FALLBACK_DY2 (12)
 /* ---- Muzzle offset ----    The shot used to start exactly on the module
@@ -1725,27 +1725,25 @@ static u8      g_wpmod_oam0, g_wpmod_oam1;         /* dynamic, OAM_NONE = no slo
 #define WPX_MUZZLE_DX(w) (((w) == (u8)WPX_FALLBACK_W) ? (s8)2 : (s8)0)
 #define WPX_MUZZLE_DY(w) ((s8)0)
 #endif
-/* ---- Montageplaetze aus dem Tool ----
-   DIE POSITION GEHOERT ZUM SCHIFF, NICHT ZUR WAFFE. Vorher trug jede Waffe
-   ihre eine feste Stelle (lvl_weapon_dx/dy); Kanone und Laser mussten sich
-   damit um dieselbe streiten, und beim Schrumpfen des Schiffs blieb jede
-   von Hand eingestellte Zahl zurueck - im Bild standen die Module neben dem
-   Rumpf, waehrend sie im Tool sassen (Nutzerbefund 04.08.).
-   Jetzt wie im Original (weapons.md, DS:0x30a8 / Installer 1000:3117): das
-   Schiff hat Plaetze mit Gruppe, die Waffe sagt nur ihre Gruppe, und sie
-   bekommt den ERSTEN FREIEN Platz darin. Die Ecke des Moduls ergibt sich
-   aus Platz minus Bezugspunkt:
-       modul = lvl_mount_dx[platz] - lvl_weapon_anchor_dx[waffe]
-   Der Bezugspunkt ist der Punkt IM Modul, der auf dem Platz liegt - beim
-   8x16-Modul der Kanone also (4,8) und nicht die Ecke. */
+/* ---- Mount positions from the tool ---- THE POSITION BELONGS TO THE
+   SHIP, NOT TO THE WEAPON. Each weapon used to carry its one fixed spot
+   (lvl_weapon_dx/dy); cannon and laser had to fight over the same one, and
+   when the ship shrank every hand-tuned number stayed behind - the modules
+   stood beside the hull while they sat on it in the tool (user report
+   04.08.). Now as in the original (weapons.md, DS:0x30a8 / installer
+   1000:3117): the ship has positions with a group, the weapon states only
+   its group, and it gets the FIRST FREE position in it. The module's
+   corner follows from position minus reference point: module =
+   lvl_mount_dx[slot] - lvl_weapon_anchor_dx[weapon] The reference point is
+   the point INSIDE the module that comes to lie on the position - for the
+   cannon's 8x16 module that is (4,8), not the corner. */
 #ifdef LVL_MOUNT_COUNT
 static u8  g_wp_mount[LVL_WEAPON_COUNT];   /* Platz je Waffe, 0xFF = keiner */
-static u16 g_wp_mount_for;                 /* weapons_active, fuer das es gilt */
+static u16 g_wp_mount_for;                 /* the weapons_active it holds for */
 static u8  g_wp_mount_done;
 
-/* Neu verteilen. Reihenfolge = Waffenindex; das ist die einzige stabile,
-   die wir haben (das Original vergibt nach Installationsreihenfolge, die
-   wir nicht mitschreiben). */
+/* Redistribute. Order = weapon index; that is the only stable one we have
+   (the original hands out by installation order, which we do not record). */
 static void wp_mounts_assign(void) {
     u8 belegt[LVL_MOUNT_COUNT];
     u8 w, m;
@@ -1763,10 +1761,10 @@ static void wp_mounts_assign(void) {
     g_wp_mount_done = 1u;
 }
 
-/* Selbstsynchronisierend: die Verteilung haengt NUR an weapons_active, und
-   jeder Aufrufer von wpx_dx/dy soll sie richtig vorfinden, ohne dass man an
-   jede Kauf-, Aufsammel- und Wiedereinstiegsstelle einen Aufruf haengt -
-   davon gibt es zu viele, und eine vergessene faellt erst im Bild auf. */
+/* Self-synchronising: the distribution depends ONLY on weapons_active, and
+   every caller of wpx_dx/dy should find it correct without a call being
+   hung on each buy, pickup and respawn site - there are too many of those,
+   and a forgotten one only shows up in the picture. */
 static void wp_mounts_sync(void) {
     if (!g_wp_mount_done || g_wp_mount_for != g_player.weapons_active)
         wp_mounts_assign();
@@ -3290,17 +3288,18 @@ static const u8  beam_weapon[BEAM_COUNT] = { 3u };
    stacked middle and tail. */
 static struct {
     u8 oam;      /* oams[0], oder OAM_NONE = kein Block vergeben */
-    /* !! EINZELNE SLOTS, KEIN ZUSAMMENHAENGENDER BLOCK. Frueher stand hier
-       ein Basisslot und die Segmente lagen auf oam+0..oam+cnt-1, angefordert
-       ueber oam_pool_alloc_run(). Der Kommentar begruendete das mit dem
-       Chaining - aber gezeichnet wird mit spr_draw_s_single(), und dort ist
-       das Ketten-Bit von SetSprite() NULL: die Segmente tragen ihre ABSOLUTE
-       Position, es wurde nie gekettet. Die Forderung nach zusammenhaengenden
-       Slots war also grundlos, und sie kostete den Strahl regelmaessig ganz:
-       gemessen scheiterte sie in 12 % der Frames, waehrend noch 31 von 56
-       Slots FREI waren - der Pool ist nicht voll, er ist zerstueckelt, und
-       zwischen den belegten liegen selten drei am Stueck. Im Bild sah das
-       aus wie "der Laser schiesst keinen Laser" (Nutzerbefund 04.08.). */
+    /* !! INDIVIDUAL SLOTS, NOT A CONTIGUOUS BLOCK. This used to hold a
+       base slot with the segments on oam+0..oam+cnt-1, requested through
+       oam_pool_alloc_run(). The comment justified that with the chaining -
+       but drawing goes through spr_draw_s_single(), and the chain bit of
+       SetSprite() is ZERO there: the segments carry their ABSOLUTE
+       position, they were never chained. The demand for contiguous slots
+       was therefore groundless, and it cost the beam entirely on a regular
+       basis: measured, it failed in 12 % of the frames while 31 of 56
+       slots were still FREE - the pool is not full, it is fragmented, and
+       between the used ones there are rarely three in a row. On screen
+       that looked like "the laser does not shoot a laser" (user report
+       04.08.). */
     u8 oams[BEAM_MAX_SEG];
     u8 cnt;      /* wie viele Slots vergeben sind */
     u8 on;       /* fliegt gerade einer? */
@@ -3351,18 +3350,18 @@ static void beam_draw(u8 bi, u8 stage, u8 gun_x, u8 gun_y) {
     if (bi >= (u8)BEAM_COUNT || stage >= (u8)BEAM_STAGES) return;
     mh   = beam_mid_h[bi][stage];
     if (mh < 4u) mh = 8u;
-    /* !! DIE VERWEISE AUS map.h SIND KODIERT, DIE DES RUECKFALLS NICHT.
-       Der Strahlen-Reiter schreibt sie wie ueberall im Export: 0x8000|n fuer
-       ein Standbild, 0xFFFF fuer "nicht gesetzt". Der Rueckfall im Code trug
-       dagegen die ROHE S-Nummer (287, 286, ...), und spr_draw_s_single()
-       rechnet s_num-1 und greift damit in lvl_sspr_a_idx.
-       Ungemaskiert wurde aus 0x811F die 33054 - ein Griff weit hinter das
-       Ende der Tabelle. Der Strahl "flog" dann zwar (die Zustandswerte
-       stimmten), zeichnete aber Muell bzw. nichts: genau der Nutzerbefund
-       "der Laser schiesst keinen Laser" vom 04.08., der erst auftrat, als
-       der Export die Tabellen erstmals mitlieferte und den Rueckfall
-       abschaltete. Maskieren macht beide Quellen gleich - eine rohe Nummer
-       ueberlebt das Maskieren unveraendert. */
+    /* !! THE REFERENCES FROM map.h ARE ENCODED, THE FALLBACK'S ARE NOT.
+       The beams tab writes them as everywhere in the export: 0x8000|n for
+       a still image, 0xFFFF for "not set". The fallback in the code
+       carried the RAW S number (287, 286, ...) instead, and
+       spr_draw_s_single() computes s_num-1 and indexes lvl_sspr_a_idx with
+       it. Unmasked, 0x811F became 33054 - a reach far past the end of the
+       table. The beam then "flew" (its state values were right) but drew
+       rubbish or nothing: exactly the user report "the laser does not
+       shoot a laser" of 04.08., which only appeared once the export
+       delivered the tables for the first time and switched the fallback
+       off. Masking makes both sources equal - a raw number survives it
+       unchanged. */
     mid  = (u16)(beam_mid_spr[bi][stage]  & 0x01FFu);
     head = (u16)(beam_head_spr[bi][stage] & 0x01FFu);
     if (beam_mid_spr[bi][stage] == 0xFFFFu || beam_head_spr[bi][stage] == 0xFFFFu) return;
@@ -3385,28 +3384,26 @@ static void beam_draw(u8 bi, u8 stage, u8 gun_x, u8 gun_y) {
          holds for whatever the tool exports into lvl_beam_len later
          (tools/check_beam_len.mjs says so before the build). */
       seg = (u8)(laenge / mh);
-      /* Der VOLLE Bedarf der Stufe, ungekappt - danach wird der Block
-         bemessen, siehe unten. */
+      /* The stage's FULL demand, unclipped - the block is sized from this,
+         see below. */
       seg_max = (u8)(beam_len[bi][stage] / mh); }
     if (seg > (u8)(BEAM_MAX_SEG - 2u)) seg = (u8)(BEAM_MAX_SEG - 2u);
     if (seg_max > (u8)(BEAM_MAX_SEG - 2u)) seg_max = (u8)(BEAM_MAX_SEG - 2u);
     if (seg_max < seg) seg_max = seg;
 
-    /* !! EINMAL ANFORDERN, FUER DIE GANZE FLUGBAHN - UND ZWAR DEN VOLLEN
-       BEDARF DER STUFE. Vorher richtete sich der Block nach der GEKAPPTEN
-       Laenge, und die aendert sich, sobald der Strahl den oberen Rand
-       erreicht: er gab seinen Block zurueck und forderte einen kleineren an.
-       Genau in diesem Moment kann oam_pool_alloc_run() scheitern, und der
-       Strahl war fuer den Rest seines Lebens weg.
-       Gemessen: in 12 % der Frames stand "Strahl an" ohne jeden Block - und
-       dabei waren noch 31 von 56 Slots FREI. Der Pool ist also nicht voll,
-       er ist ZERSTUECKELT: eine Kette braucht zusammenhaengende Slots, und
-       zwischen 25 belegten liegen selten drei am Stueck. Im Bild sah das aus
-       wie "der Laser schiesst keinen Laser" (Nutzerbefund 04.08.).
-       Jetzt wird der Block bei der ersten Zeichnung in voller Groesse
-       geholt und bis zum Ende behalten; ueberzaehlige Slots werden nur
-       versteckt, nicht freigegeben. Damit gibt es je Strahl GENAU EINEN
-       Versuch, und der faellt in den Moment, in dem am meisten frei ist. */
+    /* !! REQUEST ONCE, FOR THE WHOLE FLIGHT - AND AT THE STAGE'S FULL
+       SIZE. The block used to follow the CLIPPED length, and that changes
+       as soon as the beam reaches the top edge: it handed its block back
+       and asked for a smaller one. Exactly in that moment
+       oam_pool_alloc_run() can fail, and the beam was gone for the rest of
+       its life. Measured: in 12 % of the frames "beam on" stood without
+       any block - and 31 of 56 slots were still FREE. The pool is not
+       full, it is FRAGMENTED: a chain needs contiguous slots, and between
+       25 used ones there are rarely three in a row. On screen that looked
+       like "the laser does not shoot a laser" (user report 04.08.). The
+       block is now taken at full size on the first draw and kept to the
+       end; surplus slots are only hidden, not released. That gives EXACTLY
+       ONE attempt per beam, and it falls in the moment when most is free. */
     if (g_beam.oam == OAM_NONE || g_beam.cnt != (u8)(seg_max + 2u)) {
         if (g_beam.oam != OAM_NONE) {
             for (i = 0u; i < g_beam.cnt; i++) UnsetSprite(g_beam.oams[i]);
@@ -3437,9 +3434,9 @@ static void beam_draw(u8 bi, u8 stage, u8 gun_x, u8 gun_y) {
     }
     /* the head at the very top */
     spr_draw_s_single(g_beam.oams[1u + seg], head, gun_x, (u8)(y - mh));
-    /* Was der Block mehr hat, als die gekappte Laenge braucht: verstecken,
-       NICHT freigeben - sonst zerfaellt er und die naechste Anforderung
-       findet keinen zusammenhaengenden Platz mehr. */
+    /* What the block has beyond the clipped length: hide it, do NOT
+       release it - otherwise it falls apart and the next request finds no
+       contiguous room any more. */
     for (i = (u8)(seg + 2u); i < g_beam.cnt; i++) UnsetSprite(g_beam.oams[i]);
     g_beam.top = (u8)(y - mh);
     g_beam.on = 1u;
@@ -5069,14 +5066,15 @@ static void player_init(void) {
        clear RAM, and a garbage value would be an OAM slot nobody owns. */
     g_beam.oam = OAM_NONE; g_beam.cnt = 0u; g_beam.on = 0u;
 #ifdef LVL_MOUNT_COUNT
-    /* !! DIESELBE KLASSE, UND ICH BIN PROMPT HINEINGELAUFEN. wp_mounts_sync()
-       rechnet nur neu, wenn sich weapons_active GEGENUEBER g_wp_mount_for
-       geaendert hat - beides Statics ohne Initialisierer. Stand beim
-       Einschalten zufaellig g_wp_mount_done != 0 und g_wp_mount_for zufaellig
-       auf dem aktuellen weapons_active, wurde nie verteilt und g_wp_mount[]
-       blieb Muell: Module an falschen Stellen, und eine Waffe, deren Eintrag
-       zufaellig 0xFF war, verlor ihren Platz. Nutzerbefund 04.08.: "der Laser
-       geht irgendwann nicht mehr". Hier wird deshalb erzwungen verteilt. */
+    /* !! THE SAME CLASS, AND I WALKED STRAIGHT INTO IT. wp_mounts_sync()
+       only recomputes when weapons_active has changed against
+       g_wp_mount_for - both statics without an initialiser. If
+       g_wp_mount_done happened to be non-zero at power-on and
+       g_wp_mount_for happened to hold the current weapons_active, nothing
+       was ever distributed and g_wp_mount[] stayed junk: modules in the
+       wrong places, and a weapon whose entry happened to be 0xFF lost its
+       position. User report 04.08.: "the laser stops working at some
+       point". Distribution is therefore forced here. */
     g_wp_mount_done = 0u; g_wp_mount_for = 0xFFFFu;
     { u8 mw; for (mw = 0u; mw < (u8)LVL_WEAPON_COUNT; mw++) g_wp_mount[mw] = 0xFFu; }
 #endif
@@ -12431,14 +12429,13 @@ static u16 shop_sell_value(u8 idx) {
 
 /* Is the mount slot free? Weapons with the same lvl_weapon_mount_slot are
    mutually exclusive. */
-/* Ist noch ein PLATZ frei, nicht: ist die Gruppe unbenutzt.
-   !! DAS WAR DER GRUND FUER "NACH DEM SHOP SIND KEINE WEITEREN WAFFEN DA".
-   Vorher genuegte EINE montierte Waffe derselben Gruppe, um jede weitere zu
-   sperren - die Gruppe hatte damit faktisch Kapazitaet 1. Die Seitengruppe
-   hat aber VIER Plaetze (lvl_mount_*), genau wie im Original, wo erst die
-   volle Gruppe den Kauf verhindert und dann ohne Rauswurf. Gezaehlt wird
-   deshalb, wie viele Plaetze der Gruppe es gibt und wie viele davon schon
-   belegt sind. */
+/* Is a POSITION still free, not: is the group unused. !! THAT WAS THE
+   REASON FOR "AFTER THE SHOP THERE ARE NO FURTHER WEAPONS". Before, ONE
+   mounted weapon of the same group was enough to block every further one -
+   the group effectively had capacity 1. The side group has FOUR positions
+   though (lvl_mount_*), exactly as in the original, where only a full
+   group prevents the buy and then without evicting anyone. So it counts
+   how many positions the group has and how many of them are already taken. */
 static u8 shop_slot_free(u8 idx) {
     u8 want = lvl_weapon_mount_slot[lvl_shop_ref[idx]];
     u8 w;
@@ -12453,6 +12450,16 @@ static u8 shop_slot_free(u8 idx) {
             if (w == (u8)lvl_shop_ref[idx]) continue;
             if (lvl_weapon_mount_slot[w] == want) belegt++;
         }
+        /* !! A GROUP WITHOUT POSITIONS MUST NOT BLOCK EVERYTHING. The
+           mount table so far describes only side, front and tail; the
+           groups of mine, bomb, electro ball, drone and flamer do not
+           appear in it at all. With "taken < positions" that gives 0 < 0 -
+           and five weapons were no longer buyable in the shop (user report
+           04.08., "after the shop there are no further weapons"). While a
+           group has no position, the old rule therefore applies: one
+           weapon per group. As soon as the tool delivers positions for it,
+           the count above takes over by itself. */
+        if (plaetze == 0u) return (u8)(belegt == 0u);
         return (u8)(belegt < plaetze);
     }
 #else
