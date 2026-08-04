@@ -4493,6 +4493,8 @@ static void build_bg(void) {
 /* Draw the bar/separator at physical ring row `row`. SCR2 carries the
    graphic; SCR1 (the front plane) has to be cleared there or terrain shows
    through. */
+static void bar_pal_load(void);   /* Vorwaertsdeklaration, siehe C89/-w3 */
+
 static void bar_draw_at(u8 row) {
     volatile u16 *m1 = (volatile u16*)(0x9000u + (u16)row * 64u);
     u8 tx, bi;
@@ -4505,18 +4507,45 @@ static void bar_draw_at(u8 row) {
                  (u16)(TILE_BAR_BASE + bi), barFlipDef[tx] ? 0x8000u : 0u);
         anim_grid_set(row, tx, 0u);  /* the bar is never animated - clear the leftover from the terrain prefill */
     }
+    /* !! DIE PALETTEN GEHOEREN ZUM NEUAUFBAU. Sie standen nur in
+       build_bar_assets(), und das laeuft einmal beim Spielstart und nach
+       dem Shop. Wann genau der Palettenschreiber greift, haengt am VBlank -
+       gemessen kam mal die eine, mal die andere an, und Palette 3 blieb
+       ganz aus: die Balkenzellen zeigten die richtige Kachel in fremden
+       Farben, im Bild "11111" (Nutzerbefund 04.08.). Wer die Leiste neu
+       zeichnet, bringt jetzt ihre Farben mit - das ist der einzige Ort, an
+       dem beides sicher zusammengehoert. */
+    bar_pal_load();
     /* The bar row was (re)drawn, so invalidate the digit cache and let
        score_draw() put the score tiles back onto this row. */
     g_score_last_shown = 0xFFFFu;
 }
 // --- HUD bar: install palettes and tile sets (once per game_start) --
-static void build_bar_assets(void) {
+/* Nur die vier Balkenpaletten. Getrennt von build_bar_assets(), weil sie
+   OEFTER gebraucht werden als die Kacheln: jeder Neuaufbau der Leiste muss
+   sie mitbringen, sonst zeigt die richtige Kachel fremde Farben. */
+static void bar_pal_load(void) {
+    /* !! PALETTEN NUR IM VBLANK SCHREIBEN. Ausserhalb nimmt der K2GE die
+       Schreibzugriffe nicht an, und sie verpuffen - lautlos. */
+    wait_vblank();
     SetPalette(SCR_2_PLANE, 1, 0x0000, 0x0A77, 0x0422, 0x0644); /* cool */
     SetPalette(SCR_2_PLANE, 2, 0x0000, 0x0249, 0x0028, 0x0004); /* warm */
     SetPalette(SCR_2_PLANE, 3, 0x0000, 0x0A77, 0x0422, 0x009D); /* life */
-    /* Palette 4: salmon plus cool colours for the combined bar/salmon
-       tiles */
-    SetPalette(SCR_2_PLANE, 4, 0x0000, 0x0ECE, 0x0644, 0x0A77);
+    SetPalette(SCR_2_PLANE, 4, 0x0000, 0x0ECE, 0x0644, 0x0A77); /* salmon */
+}
+
+static void build_bar_assets(void) {
+    /* !! PALETTEN NUR IM VBLANK SCHREIBEN. Ausserhalb nimmt der K2GE die
+       Schreibzugriffe nicht an, und sie verpuffen - lautlos. Genau das ist
+       hier passiert: von den vier Paletten unten kam KEINE an, Palette 3
+       blieb von Reset an schwarz, und die Balkenzellen zeigten deshalb die
+       richtige Kachel in fremden Farben - im Bild las sich das als "11111"
+       (Nutzerbefund 04.08., zweimal gemeldet).
+       Gemessen ab Reset: die Sollwerte tauchten im ganzen Lauf kein
+       einziges Mal in der Palettenspeicher auf.
+       spr_pal_load() macht es seit jeher richtig und hat den Hinweis im
+       Kommentar stehen; diese Funktion hier hatte ihn nie. */
+    bar_pal_load();
     InstallTileSetAt(gfxBar, (u16)(19*8), TILE_BAR_BASE);
 }
 
@@ -13281,7 +13310,19 @@ static u8  g_dma_dirty;
    logo palettes so the logo took on foreign colours. Now 0..3 belong to
    the logo, 4..13 to the alphabet and 14..15 to the shop font of the
    highscore page. */
-#define INTRO_PAL_BASE    4u
+/* !! AB 5, NICHT AB 4 - SLOT 4 GEHOERT DER LEISTE. intro_load_pals()
+   schreibt von hier aus LVL_MENU_FONT_PAL_COUNT Paletten am Stueck, mit
+   Basis 4 also SCR2 4..15 - und 1..4 sind die Farben der HUD-Leiste
+   (barPal). Gemessen: beim Spielstart stimmen alle vier, nach dem ersten
+   Tod ist Palette 4 ueberschrieben und bleibt es; die Balkenzellen zeigten
+   danach die richtige Kachel in fremden Farben, im Bild "11111"
+   (Nutzerbefund 04.08., zweimal gemeldet).
+   Der Wiedereinstieg ruft zwar build_bar_assets() nach dem Uebergangsbild
+   auf, aber sich darauf zu verlassen heisst, jede kuenftige Stelle wieder
+   zu treffen. Ab 5 kann der Uebergang die Leiste gar nicht mehr anfassen.
+   PREIS: eine Menue-Palette weniger (5..15 statt 4..15, also 11 statt 12
+   von 13). Die Intro- und Uebergangsbilder kommen damit aus. */
+#define INTRO_PAL_BASE    5u
 #define HS_FONT_PAL_BASE 14u
 #define INTRO_SRC_H  (INTRO_ROWS * 16u)
 
