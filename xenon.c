@@ -2113,6 +2113,15 @@ static u8      g_wpx_oam[WPX_SLOTS][WPX_CELLS][2];
 static u16     g_wpx_last[WPX_SLOTS][WPX_CELLS];
 static u8      g_wpx_n[WPX_SLOTS];                 /* cell count last taken */
 static u8      g_wpx_benutzt[WPX_SLOTS];           /* drawn this frame? see the release sweep */
+/* !! WHICH WEAPON THE SLOT LAST BELONGED TO. g_wpx_last[] caches the frame
+   per slot so an unchanged module only gets a position update - but slots
+   CHANGE HANDS now that a position owns a weapon rather than the other way
+   round. Hand a slot from one weapon to another and the cache still holds
+   the old occupant's frame number; if the new one happens to want the same
+   number, the redraw is skipped and the module keeps the PREVIOUS WEAPON'S
+   GRAPHIC. On screen that reads as "the cannon is the wrong metasprite"
+   (user report 05.08.). 0xFF = nobody, forces a full redraw. */
+static u8      g_wpx_owner[WPX_SLOTS];
 /* Precomputed per weapon, because lvl_weapon_spr[w] is constant: the index
    into the metaanim list and the anim divider. Both used to be re-derived
    EVERY FRAME - a linear search over LVL_METAANIM_COUNT plus a division.
@@ -2630,7 +2639,7 @@ static u16     g_row_map[32];
    step above that is missing frames. LOWER IS BETTER. It stays running
    while the window is open, so a display that never freezes means the end
    row has not been reached yet - not that the run is over. ===== */
-#define HW_BENCH 0
+#define HW_BENCH 1
 /* Cannon and laser. The two indices come out of lvl_shop_desc, which
    records what each weapon does: article 6 -> weapon 2 "fix, keine
    Power-Stufen" is the cannon, article 8 -> weapon 3 "(Power+1) x 3 pro
@@ -2805,9 +2814,38 @@ static u8 g_paused;   /* test aid: pause toggle on the OPTION key */
 static u8 g_cur_wave; /* test aid: last triggered wave (spawn index) for the HUD */
 #endif
 
+#if HW_BENCH
+/* Up here, not down with the rest of the benchmark state: input_update()
+   is far above that and C89 has no forward declaration for a variable. */
+static u16 g_hwb_takt;      /* frames since the window opened - drives the script */
+static u8  g_hwb_zustand;   /* 0 not started, 1 window open, 2 closed */
+#endif
 static void input_update(void) {
     g_pad_prev    = g_pad;
     g_pad         = JOYPAD;
+#if HW_BENCH
+    /* !! WHILE THE WINDOW IS OPEN THE PAD IS SCRIPTED, NOT READ.
+       The whole point of a standard run is that it is the SAME run every
+       time. With the stick in a human hand it is not: a different route
+       means different enemies spawning, different kills, a different
+       drawing load - and a 2-point difference between two builds then
+       says nothing, because nobody knows the spread of the same build
+       against itself.
+       The script is the one the emulator probe flies: fire held, forward
+       held, and a slow sweep left and right. The sweep is not decoration -
+       holding UP alone WEDGES THE SHIP in the terrain and the run never
+       reaches its end row (measured: 11 minutes without arriving).
+       Outside the window the pad works normally, so the shop can still be
+       left by hand. */
+    if (g_hwb_zustand == 1u) {
+        u8 pad = (u8)(J_A | J_UP);
+        u8 ph  = (u8)((g_hwb_takt / 60u) & 3u);
+        if (ph == 1u)      pad = (u8)(pad | J_LEFT);
+        else if (ph == 3u) pad = (u8)(pad | J_RIGHT);
+        g_hwb_takt++;
+        g_pad = pad;
+    }
+#endif
     g_pad_pressed = g_pad & (u8)(~g_pad_prev);
 }
 
@@ -5588,6 +5626,11 @@ static void player_init(void) {
        would be a hard fault to explain. */
     for (w = 0u; w < (u8)LVL_WEAPON_COUNT; w++) g_wp_power[w] = 0u;
     for (w = 0u; w < (u8)LVL_WEAPON_COUNT; w++) g_wp_copies[w] = 0u;
+    /* Explicitly, like everything else here: an uninitialised static that
+       happens to hold a valid weapon number would suppress the redraw on a
+       slot handover, and the module would show the previous weapon's
+       graphic. See g_wpx_owner. */
+    { u8 sw; for (sw = 0u; sw < (u8)WPX_SLOTS; sw++) g_wpx_owner[sw] = 0xFFu; }
     for (w = 0u; w < (u8)LVL_WEAPON_COUNT; w++) g_player.weapon_cooldown[w] = 0u;
 }
 
@@ -6724,7 +6767,6 @@ static u16 g_vbc_avg30;
 static u16 g_hwb_sum;
 static u16 g_hwb_n;
 static u16 g_hwb_erg;
-static u8  g_hwb_zustand;
 /* !! NO ONE-SHOT GUARD AT ALL. The first version armed the loadout and the
    shop "only on the first game_start()" through `static u8 hwb_done;` -
    an uninitialised static, the class CLAUDE.md sec.6.1 is about. The
@@ -6743,7 +6785,7 @@ static u8  g_hwb_zustand;
 /* Every counter here is a static WITHOUT an initialiser - the emulator
    zeroes RAM at start, REAL HARDWARE DOES NOT (see vbc_stats_reset). */
 static void hwb_reset(void) {
-    g_hwb_sum = 0u; g_hwb_n = 0u; g_hwb_erg = 0u; g_hwb_zustand = 0u;
+    g_hwb_sum = 0u; g_hwb_n = 0u; g_hwb_erg = 0u; g_hwb_takt = 0u; g_hwb_zustand = 0u;
 }
 
 /* ONCE PER POWER-ON, out of main(). Everything here is assigned, nothing
@@ -6753,7 +6795,7 @@ static void hwb_boot(void) {
 }
 
 static void hwb_open(void) {
-    g_hwb_sum = 0u; g_hwb_n = 0u; g_hwb_zustand = 1u;
+    g_hwb_sum = 0u; g_hwb_n = 0u; g_hwb_takt = 0u; g_hwb_zustand = 1u;
 }
 
 static void hwb_close(void) {
@@ -11568,6 +11610,13 @@ wpx_done:
                 }
                 g_wpx_last[ws][c] = 0u;
             }
+            /* Slot changed hands -> throw the frame cache away, see
+               g_wpx_owner. */
+            if (g_wpx_owner[ws] != w) {
+                u8 cc;
+                for (cc = 0u; cc < (u8)WPX_CELLS; cc++) g_wpx_last[ws][cc] = 0u;
+                g_wpx_owner[ws] = w;
+            }
             g_wpx_n[ws] = cnt;
             g_wpx_benutzt[ws] = 1u;   /* claimed this frame, see the sweep below */
             for (c = 0u; c < cnt; c++) {
@@ -11618,6 +11667,7 @@ wpx_done:
             g_wpx_last[ws2][c2] = 0u;
           }
           g_wpx_n[ws2] = 0u;
+          g_wpx_owner[ws2] = 0xFFu;   /* free -> the next weapon redraws in full */
         }
       }
     }
