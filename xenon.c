@@ -2639,7 +2639,7 @@ static u16     g_row_map[32];
    step above that is missing frames. LOWER IS BETTER. It stays running
    while the window is open, so a display that never freezes means the end
    row has not been reached yet - not that the run is over. ===== */
-#define HW_BENCH 1
+#define HW_BENCH 0
 /* Cannon and laser. The two indices come out of lvl_shop_desc, which
    records what each weapon does: article 6 -> weapon 2 "fix, keine
    Power-Stufen" is the cannon, article 8 -> weapon 3 "(Power+1) x 3 pro
