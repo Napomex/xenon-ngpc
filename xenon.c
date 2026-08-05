@@ -6725,11 +6725,31 @@ static u16 g_hwb_sum;
 static u16 g_hwb_n;
 static u16 g_hwb_erg;
 static u8  g_hwb_zustand;
+/* !! NO ONE-SHOT GUARD AT ALL. The first version armed the loadout and the
+   shop "only on the first game_start()" through `static u8 hwb_done;` -
+   an uninitialised static, the class CLAUDE.md sec.6.1 is about. The
+   emulator zeroes RAM at start and REAL HARDWARE DOES NOT, so a stray 1
+   in there skips the whole block: no loadout, hence no continuous fire,
+   and no forced return row, hence a run that starts at the beginning of
+   the level. Both were reported from hardware while the emulator stayed
+   green, and the emulator CANNOT show it - the C startup clears the data
+   area before main(), so even writing garbage in from outside does not
+   survive.
+   So the guard is gone instead of fixed: the loadout, the armed shop and
+   the return row are set on EVERY game_start(). Nothing to remember, so
+   nothing to get wrong - and the run repeats without a power cycle, which
+   is what a benchmark wants anyway. */
 
 /* Every counter here is a static WITHOUT an initialiser - the emulator
    zeroes RAM at start, REAL HARDWARE DOES NOT (see vbc_stats_reset). */
 static void hwb_reset(void) {
     g_hwb_sum = 0u; g_hwb_n = 0u; g_hwb_erg = 0u; g_hwb_zustand = 0u;
+}
+
+/* ONCE PER POWER-ON, out of main(). Everything here is assigned, nothing
+   is assumed - see the note on the guards above. */
+static void hwb_boot(void) {
+    hwb_reset();
 }
 
 static void hwb_open(void) {
@@ -12440,8 +12460,7 @@ static void game_start(void) {
        the FIRST game_start(), or leaving the shop would land straight back
        in it. The static is written rather than trusted: RAM is not cleared
        at power-on. */
-    { static u8 hwb_done;
-      if (hwb_done != 1u) { hwb_done = 1u;
+    {   {
           hwb_reset();
           g_player.weapons_active |= (u16)HW_BENCH_WEAPONS;
           g_player.firerate_stage = (u8)HW_BENCH_FIRERATE;
@@ -13449,11 +13468,8 @@ static void shop_resume(void) {
        defined over. lvl_shop_trigger_row[0] is where the first shop really
        stands (row 123); the smart bomb that closes the window is the
        reward for group 59, whose wave is at row 189. */
-    { static u8 hwb_row;
-      if (hwb_row != 1u) { hwb_row = 1u;
-          if ((u8)LVL_SHOP_TRIGGER_COUNT > 0u)
-              g_shop_return_row = lvl_shop_trigger_row[0];
-      } }
+    if ((u8)LVL_SHOP_TRIGGER_COUNT > 0u)
+        g_shop_return_row = lvl_shop_trigger_row[0];
     /* Leaving the shop opens the measuring window. Here rather than at the
        state change, because this is where the world is actually rebuilt -
        the uploads below are part of the frame the player sees first, and
@@ -15119,6 +15135,9 @@ void main(void) {
     g_name_rank    = 0xFFu;
     g_save_status  = 0u;
     InitNGPC();
+#if HW_BENCH
+    hwb_boot();   /* the one-shot guards, explicitly - see there */
+#endif
     K2GE_2D_CONTROL &= (u8)~K2GE_NEG_BIT;
     /* Force the full CPU clock of 6.144 MHz: the game never set the clock
        explicitly and ran on the BIOS default. If that was not full speed
