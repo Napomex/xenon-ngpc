@@ -1899,6 +1899,7 @@ static u8  g_wp_mount[LVL_WEAPON_COUNT];   /* FIRST position of the weapon, 0xFF
 static u8  g_mount_wp[LVL_MOUNT_COUNT];    /* weapon at this position, 0xFF = free */
 static u16 g_wp_mount_for;                 /* the weapons_active it holds for */
 static u8  g_wp_mount_gen, g_wp_mount_seen;  /* copies can change without the bitmask changing */
+static u16 g_wp_maske_gesehen;   /* letzte abgeglichene weapons_active, siehe wp_mounts_sync */
 static u8  g_wp_mount_done;
 
 /* Redistribute. Order = weapon index; that is the only stable one we have
@@ -1966,7 +1967,18 @@ static void wp_mounts_assign(void) {
    distribution hung on the mask alone would never notice. Every place that
    changes a copy count bumps g_wp_mount_gen. */
 static void wp_mounts_sync(void) {
-    if (wp_copies_sync_mask()) g_wp_mount_gen++;
+    /* !! DER ABGLEICH LIEF BEI JEDEM AUFRUF UEBER ALLE ELF WAFFEN - und
+       aufgerufen wird je Waffe UND je Kopie, aus der Zeichenschleife wie
+       aus wp_spawn(). Gemessen auf Hardware (05.08.): das Zeichnen des
+       Waffenmoduls kostet 7 bis 10 VBlanks je 30 Frames, so viel wie das
+       Zeichnen ALLER Gegner - fuer ein einziges kleines Sprite. Der
+       Abgleich ist aber nur noetig, wenn sich die Maske seit dem letzten
+       Mal geaendert hat; sonst hat er nichts zu tun und laeuft trotzdem.
+       Eingebaut habe ich das gestern mit der Mehrfachmontage. */
+    if (g_wp_maske_gesehen != g_player.weapons_active) {
+        g_wp_maske_gesehen = g_player.weapons_active;
+        if (wp_copies_sync_mask()) g_wp_mount_gen++;
+    }
     if (!g_wp_mount_done || g_wp_mount_for != g_player.weapons_active
         || g_wp_mount_seen != g_wp_mount_gen)
         wp_mounts_assign();
@@ -5693,6 +5705,7 @@ static void player_init(void) {
        would be a hard fault to explain. */
     for (w = 0u; w < (u8)LVL_WEAPON_COUNT; w++) g_wp_power[w] = 0u;
     for (w = 0u; w < (u8)LVL_WEAPON_COUNT; w++) g_wp_copies[w] = 0u;
+    g_wp_maske_gesehen = 0xFFFFu;   /* erzwingt einen Abgleich, siehe wp_mounts_sync */
     /* Explicitly, like everything else here: an uninitialised static that
        happens to hold a valid weapon number would suppress the redraw on a
        slot handover, and the module would show the previous weapon's
