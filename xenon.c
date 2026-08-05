@@ -1210,9 +1210,32 @@ static u8 oam_pool_alloc(void) {
 #define OAM_PRIO_THRUST 3u   /* Triebwerksflammen */
 static const u8 oam_prio_rest[4] = { 0u, 3u, 6u, 12u };
 
+/* ===== OAM_PRIO_OFF: 1 = the priority rule does nothing, every class just
+   takes the next free slot. FOR MEASURING ONLY, 0 for release.
+
+   The question it answers: does the priority itself cost VBlanks? It does
+   not compute much - one comparison per allocation - but it changes WHO
+   gets a slot from frame to frame, and a slot that changes owner needs a
+   FULL SetSprite plus SpriteControl instead of a two-byte
+   SetSpritePosition. Slot churn is therefore a bus-traffic cost, and bus
+   traffic is exactly what the emulator does not model. So it has to be
+   answered on hardware, against an otherwise identical build.
+
+   !! THE SCENE IS NOT BYTE-IDENTICAL WITH IT ON. When the pool runs dry
+   the two builds drop DIFFERENT sprites - that is what the rule is for.
+   Over this run the difference is small, but it is not zero, so read the
+   result as "priority plus what it changes", not as the price of the
+   comparison alone. ===== */
+#define OAM_PRIO_OFF 0
+
 static u8 oam_pool_alloc_p(u8 prio) {
+#if OAM_PRIO_OFF
+    (void)prio;
+    return oam_pool_alloc();
+#else
     if (g_oam_pool_n <= oam_prio_rest[prio]) return OAM_NONE;
     return oam_pool_alloc();
+#endif
 }
 
 static u8 oam_pool_alloc_run(u8 n) {
