@@ -8966,8 +8966,20 @@ static void wallworms_update(void) {
        find_ring_row). */
     {
         u16 prow = (u16)(g_scroll_y >> 3);
+        /* !! DER RAND GILT NUR BEIM HINEINFAHREN, NICHT BEIM HINAUS.
+           Die Ausfahrtseite stand auf MAX + einer Bildschirmhoehe, also
+           142 bei einem Band von 92..123. Gemessen auf Hardware (05.08.):
+           die Suche allein kostet 7 VBlanks je 30 Frames - und der
+           Messlauf faehrt 123..170, das Band liegt also bereits HINTER
+           dem Spieler. Wir haben nach Loechern gesucht, die nicht mehr
+           sichtbar werden koennen.
+           Die Asymmetrie ist richtig, nicht nachlaessig: Loecher kommen
+           von UNTEN ins Bild. Beim Hineinfahren muss die Suche eine
+           Bildschirmhoehe frueher anlaufen, damit ein Loch am unteren
+           Rand schon bedient wird; beim Hinausfahren ist ein Loch in
+           Zeile R aber genau dann weg, wenn prow ueber R steht. */
         if (prow + (u16)LVL_SCREEN_ROWS < (u16)WALLWORM_ROW_MIN ||
-            prow > (u16)WALLWORM_ROW_MAX + (u16)LVL_SCREEN_ROWS) {
+            prow > (u16)WALLWORM_ROW_MAX) {
             for (w = 0u; w < (u8)WALLWORM_SLOTS; w++) wallworm_tick(w);
             return;   /* no hole in range - no search needed */
         }
