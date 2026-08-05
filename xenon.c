@@ -2831,19 +2831,18 @@ static void input_update(void) {
        drawing load - and a 2-point difference between two builds then
        says nothing, because nobody knows the spread of the same build
        against itself.
-       The script is the one the emulator probe flies: fire held, forward
-       held, and a slow sweep left and right. The sweep is not decoration -
-       holding UP alone WEDGES THE SHIP in the terrain and the run never
-       reaches its end row (measured: 11 minutes without arriving).
+       THE SHIP DOES NOT MOVE - IT ONLY SHOOTS (user specification 05.08.:
+       "after the shop do not move, the map pushes itself"). The level
+       scrolls on its own, so the run reaches its end row without a single
+       direction being pressed. That also removes the reason the first
+       script had a sweep in it: steering forward WEDGES THE SHIP in the
+       terrain, and the sweep was only there to work around a movement
+       nobody asked for.
        Outside the window the pad works normally, so the shop can still be
        left by hand. */
     if (g_hwb_zustand == 1u) {
-        u8 pad = (u8)(J_A | J_UP);
-        u8 ph  = (u8)((g_hwb_takt / 60u) & 3u);
-        if (ph == 1u)      pad = (u8)(pad | J_LEFT);
-        else if (ph == 3u) pad = (u8)(pad | J_RIGHT);
         g_hwb_takt++;
-        g_pad = pad;
+        g_pad = (u8)J_A;   /* FIRE ONLY - see above */
     }
 #endif
     g_pad_pressed = g_pad & (u8)(~g_pad_prev);
