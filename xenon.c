@@ -2659,7 +2659,7 @@ static u16     g_row_map[32];
    does not scroll on its own", then as a screenshot showing the level
    really running with the row standing still (user diagnosis 05.08.: "the
    ship is stuck on the stone"). */
-#define HW_BENCH_START_DX 12
+#define HW_BENCH_START_DX (-12)
 #define BENCH_META_N 7u
 #if BENCH_META
 #define WARP_CHECKPOINT 7   /* boss arena = scroll end */
@@ -13546,7 +13546,7 @@ static void shop_resume(void) {
         g_shop_return_row = lvl_shop_trigger_row[0];
     /* The offset belongs to THIS run, not to the level start: moving the
        general spawn would change the game. See HW_BENCH_START_DX. */
-    g_player.x = (u8)(g_player.x + (u8)HW_BENCH_START_DX);
+    g_player.x = (u8)((s16)g_player.x + (s16)HW_BENCH_START_DX);
     /* Leaving the shop opens the measuring window. Here rather than at the
        state change, because this is where the world is actually rebuilt -
        the uploads below are part of the frame the player sees first, and
