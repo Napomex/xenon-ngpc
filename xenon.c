@@ -4976,7 +4976,23 @@ static void bar_draw_at(u8 row) {
        colours, on screen "11111" (user report 04.08.). Whoever redraws the
        bar now brings its colours along - this is the one place where the
        two certainly belong together. */
-    bar_pal_load();
+    /* !! KEIN bar_pal_load() MEHR HIER - ES WAR EIN wait_vblank() IM
+       BILDAUFBAU. Gemessen auf Hardware am 05.08.: der Neuaufbau der
+       Leiste kostet 7 bis 10 VBlanks je 30 Frames (Referenz 145-148,
+       mit abgeschaltetem Neuaufbau 138). Nicht der Kachelverkehr - die
+       60 Schreibzugriffe hier sind nichts -, sondern das BLOCKIERENDE
+       WARTEN in bar_pal_load(). Die Funktion laeuft am Ende des Frames,
+       und das Warten verschenkt den Rest davon.
+
+       Der Grund, aus dem sie am 04.08. hierher kam, ist inzwischen an der
+       Wurzel behoben: die Uebergangsbilder schrieben ueber die
+       Balkenpaletten, seit INTRO_PAL_BASE auf 5 steht koennen sie die
+       Slots 1-4 gar nicht mehr erreichen. Und build_bar_assets() laedt die
+       Paletten an JEDER Stelle, an der sie verlorengehen koennen -
+       Spielstart, shop_resume(), level_loop_restart().
+
+       Wer sie hier wieder hineinsetzt, zahlt einen halben Frame je
+       Zeilenwechsel fuer einen Fehler, den es nicht mehr gibt. */
     /* The bar row was (re)drawn, so invalidate the digit cache and let
        score_draw() put the score tiles back onto this row. */
     g_score_last_shown = 0xFFFFu;
