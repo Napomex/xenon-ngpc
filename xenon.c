@@ -11994,11 +11994,22 @@ static void bar_redraw_flush(void) {
        there (the row    left behind is later overwritten by the
        streaming). Solution: restore one frame    later, when the table has
        long pointed at the new row and the old one is off    screen. */
+    /* ===== Zwei Unterbloecke, um die 13 VBlanks der Leiste aufzuteilen.
+       Hardware 05.08.: Block 8 kostet 13 VBlanks je 30 Frames (8,8 %) - fuer
+       einen Streifen, der sich selten aendert. Die Setzer von g_bar_redraw
+       sind alle ereignisgesteuert, gezeichnet wird also NICHT jeden Frame;
+       die Kosten muessen im Neuaufbau selbst oder im Terrain-Restore
+       stecken. Block 24 = Restore, Block 25 = Neuaufbau.
+       !! DIE FLAGGE WIRD TROTZDEM GELOESCHT. Bliebe sie stehen, sammelte
+       sich Arbeit an anderer Stelle an und die Messung zeigte etwas
+       anderes als den abgeschalteten Block - genau der Fehler, an dem
+       mess_5 unbrauchbar geworden ist (g_busy_bullets). ===== */
     if (g_bar_restore_pending != 0xFFu) {
-        restore_terrain_row(g_bar_restore_pending);
+        if (!PROF_OFF(24)) restore_terrain_row(g_bar_restore_pending);
         g_bar_restore_pending = 0xFFu;
     }
     if (g_bar_redraw == 0u) return;
+    if (PROF_OFF(25)) { g_bar_redraw = 0u; return; }
     if (g_bar_redraw == 2u) g_bar_restore_pending = g_bar_redraw_old;   /* backwards: the old row becomes terrain NEXT frame */
     /* Fixed split: NO strip clear any more. The bar ring row now sits one
        row lower (off screen in the terrain scroll), and the row above the
