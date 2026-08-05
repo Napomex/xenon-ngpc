@@ -13537,6 +13537,19 @@ static void level_loop_restart(void) {
        terrain and lead-in from the section valid at that point. */
     spr_sec_select(0u);
     spr_tiles_upload();
+    /* !! DIE LEISTENKACHELN GEHOEREN HIER GENAUSO DAZU WIE DIE SPRITES.
+       Dieser Weg kommt DIREKT AUS DEM SHOP, und der ueberschreibt die
+       GESAMTE Character-RAM - die Balkenkacheln inklusive. Die Zeile
+       darueber holt die Sprites zurueck, die Leiste blieb liegen: in den
+       Balkenzellen stand danach, was zufaellig auf ihren VRAM-Plaetzen lag,
+       im Bild als "11111" (Nutzerbefund 05.08., aus den Screenshots des
+       Laufs Boss -> Shop -> Levelneustart).
+       Nicht zu verwechseln mit dem Palettenfehler vom 04.08.: der betraf
+       die FARBEN (INTRO_PAL_BASE 4 -> 5), hier sind es die KACHELN. Beide
+       zeigen "11111", und der erste Fix konnte den zweiten deshalb nicht
+       beheben. shop_resume() macht es an seiner Stelle laengst richtig -
+       nur laeuft es auf diesem Weg nicht. */
+    build_bar_assets();
 
     game_start();
 
@@ -13552,10 +13565,23 @@ static void level_loop_restart(void) {
     g_score       = keep_score;
     g_score_shown = keep_score;
     g_cash        = keep_cash;
-    /* Adjust the bar's life cells to the carried-over count - game_start()
-       set them to full (cell 10+i is alive while i < lives). */
-    for (c = 0u; c < 5u; c++)
-        g_bar_col[(u8)(10u + c)] = (u8)((g_player.energy > (u8)(c * 8u)) ? 9u : 2u);
+    /* !! DURCH bar_set_energy(), NICHT AN IHR VORBEI. Hier standen die
+       ALTEN FESTEN DESIGNNUMMERN 9 (voll) und 2 (leer) aus dem
+       handgemachten Kachelsatz - dieselben, die am 04.08. ueberall sonst
+       durch BAR_ENERGY_FULL/EMPTY ersetzt wurden, nur an dieser einen
+       Stelle nicht. Im Kachelsatz aus dem Tool ist 9 die ZIFFER 1, und
+       genau deshalb stand nach dem Weg Boss -> Shop -> Levelneustart
+       "11111" im Energiebalken (Nutzerbefund 05.08., aus den Screenshots).
+       Gemessen: die Spalten standen vor dem Boss auf 4,4,4,4,4 und danach
+       auf 9,9,9,9,9.
+       Der Palettenfehler vom 04.08. (INTRO_PAL_BASE 4 -> 5) sah GENAUSO
+       aus und war ein anderer - dort waren es die Farben, hier die
+       Kachelnummern. Ein zweiter Fehler mit demselben Bild.
+       Die Kopie der Formel war ohnehin ueberfluessig: bar_set_energy()
+       rechnet dasselbe, nur mit den Zahlen aus den Tool-Daten, und wer sie
+       aufruft kann die Nummern gar nicht erst falsch abschreiben. */
+    (void)c;
+    bar_set_energy();
     bar_draw_at(g_bar_vrow);
 }
 
