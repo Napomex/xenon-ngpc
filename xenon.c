@@ -2651,7 +2651,17 @@ static u16     g_row_map[32];
 /* End of the measuring window. The start is lvl_shop_trigger_row[0], the
    row of the first shop (123 today), so the run covers 67 rows - through
    the wall worms and the dense band, which is where it gets tight. */
-#define HW_BENCH_ROW_END 190u
+/* End of the window. 170, not 190: with the ship standing still at
+   HW_BENCH_START_DX the scroll advances by itself to row 176 and stalls
+   there against terrain - measured, identically in two runs. 170 is in
+   front of that, so the run always finishes. For comparing two builds only
+   the SAME stretch matters, not a long one. */
+#define HW_BENCH_ROW_END 170u
+/* Second end condition, so EVERY build finishes. A profiling ROM with the
+   scroll block switched off never reaches a row at all, and a window that
+   never closes shows no number - which reads exactly like a broken ROM.
+   The unit is 30-frame windows: 120 of them are about 60 s at 20 fps. */
+#define HW_BENCH_MAX_WIN 120u
 /* Sideways offset of the starting position, see shop_resume(). Straight
    ahead of the middle of the screen at row 123 stands a rock: the ship
    wedges against it, the scroll does not advance and the run never reaches
@@ -15511,7 +15521,8 @@ void main(void) {
                hwb_close() only takes the first one, so it costs a compare
                after that. */
             { u16 brow = (u16)(g_scroll_y >> 3);
-              if (brow >= (u16)HW_BENCH_ROW_END) hwb_close(); }
+              if (brow >= (u16)HW_BENCH_ROW_END) hwb_close();
+              else if (g_hwb_n >= (u16)HW_BENCH_MAX_WIN) hwb_close(); }
 #endif
 #if PICKUP_TEST
             /* proof script, see PICKUP_TEST. */
