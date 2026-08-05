@@ -2841,8 +2841,16 @@ static void input_update(void) {
        Outside the window the pad works normally, so the shop can still be
        left by hand. */
     if (g_hwb_zustand == 1u) {
+        /* !! PULSED, NOT HELD. g_pad_pressed is an EDGE (g_pad & ~prev), so
+           a permanently held A produces no edge at all - and every screen
+           that waits for a PRESS then waits for ever. Measured: the run sat
+           on "GET READY PLAYER 1" while the row and the ship stood still,
+           which read exactly like a level that does not scroll on its own.
+           It was the script, not the scroll. Four frames on, four off gives
+           both: the weapons auto-fire on hold, and the transitions get
+           their edge. */
+        g_pad = (u8)((g_hwb_takt & 4u) ? J_A : 0u);
         g_hwb_takt++;
-        g_pad = (u8)J_A;   /* FIRE ONLY - see above */
     }
 #endif
     g_pad_pressed = g_pad & (u8)(~g_pad_prev);
