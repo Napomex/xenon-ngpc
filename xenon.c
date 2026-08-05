@@ -8988,8 +8988,23 @@ static void wallworms_update(void) {
         return;
     }
 #endif
+    /* ===== Unterblock 26: die LOCHSUCHE. Hardware 05.08.: Block 12
+       (Wandwurm-Update) kostet 10 bis 13 VBlanks je 30 Frames - der
+       groesste gemessene Einzelposten. Zwei Kandidaten stecken darin: die
+       Suche hier (wallworm_pick_exit -> 16 Loecher x 32 Ringzeilen = 512
+       Durchlaeufe) und die wallworm_tick()-Schleife darunter. Dieser Block
+       trennt beide.
+       Das Band liegt in den Zeilen 92..123, der Messlauf faehrt 123..170,
+       und die Abkuerzung oben greift erst ab Zeile 142 (MAX + eine
+       Bildschirmhoehe) - die Suche laeuft also ueber die ersten 40 % des
+       Laufs.
+       !! DER ZAEHLER WIRD TROTZDEM HERUNTERGEZAEHLT. Bliebe er stehen,
+       spawnte die Messfassung spaeter anders als die Referenz und wuerde
+       eine andere Szene messen - die Fehlerklasse von mess_5. ===== */
     if (g_wallworm_spawn_cd > 0u) {
         g_wallworm_spawn_cd--;
+    } else if (PROF_OFF(26)) {
+        g_wallworm_spawn_cd = (u8)WORM_SPAWN_INTERVAL;
     } else {
         for (w = 0u; w < (u8)WALLWORM_SLOTS; w++) {
             if (!g_wallworms[w].active) {
