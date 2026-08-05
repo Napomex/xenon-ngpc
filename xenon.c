@@ -2652,6 +2652,14 @@ static u16     g_row_map[32];
    row of the first shop (123 today), so the run covers 67 rows - through
    the wall worms and the dense band, which is where it gets tight. */
 #define HW_BENCH_ROW_END 190u
+/* Sideways offset of the starting position, see shop_resume(). Straight
+   ahead of the middle of the screen at row 123 stands a rock: the ship
+   wedges against it, the scroll does not advance and the run never reaches
+   its end row. Two rounds went into that - first reported as "the level
+   does not scroll on its own", then as a screenshot showing the level
+   really running with the row standing still (user diagnosis 05.08.: "the
+   ship is stuck on the stone"). */
+#define HW_BENCH_START_DX 12
 #define BENCH_META_N 7u
 #if BENCH_META
 #define WARP_CHECKPOINT 7   /* boss arena = scroll end */
@@ -5227,6 +5235,15 @@ static void bar_set_lives(void) {
    condition would drift apart the first time the rule changes - and the
    drift would be silent, because both halves keep compiling. */
 static u8 god_active(void) {
+#if HW_BENCH
+    /* !! THE MEASURING RUN IS INVULNERABLE, UNCONDITIONALLY. The script
+       only fires, it does not dodge - so the ship dies, the game restarts
+       and the row runs BACKWARDS (measured 123 -> 33 -> 1). The ordinary
+       GOD_MODE is not enough: it hangs on the display view, and the game
+       starts in the score view where it is off. A benchmark whose outcome
+       depends on which view happens to be up is not a benchmark. */
+    if (g_hwb_zustand == 1u) return 1u;
+#endif
 #if WORM_TEST_MODE || GOD_MODE
     if (!g_score_view) return 1u;
 #endif
@@ -13527,6 +13544,9 @@ static void shop_resume(void) {
        reward for group 59, whose wave is at row 189. */
     if ((u8)LVL_SHOP_TRIGGER_COUNT > 0u)
         g_shop_return_row = lvl_shop_trigger_row[0];
+    /* The offset belongs to THIS run, not to the level start: moving the
+       general spawn would change the game. See HW_BENCH_START_DX. */
+    g_player.x = (u8)(g_player.x + (u8)HW_BENCH_START_DX);
     /* Leaving the shop opens the measuring window. Here rather than at the
        state change, because this is where the world is actually rebuilt -
        the uploads below are part of the frame the player sees first, and
@@ -15237,7 +15257,17 @@ void main(void) {
        Set explicitly rather than relying on the static being zero: real
        hardware does not clear RAM (see the note on statics without an
        initialiser), and this byte decides whether the player can die. */
+#if HW_BENCH
+    /* !! THE MEASURING RUN STARTS IN THE BENCHMARK VIEW, not the score
+       view - which is the same thing as pressing OPTION once by hand (user
+       instruction 05.08.). Two things hang on it: the left three digits
+       show the VBlank figure at all, and god_active() is tied to the view,
+       so the ship is invulnerable. Without it the run showed the score,
+       the ship died, and the row ran BACKWARDS (measured 123 -> 33 -> 1). */
+    g_score_view = 0u;
+#else
     g_score_view = 1u;
+#endif
     g_fps_mode = (u8)FPS_MODE_DEFAULT;
     /* The saved record, BEFORE the title screen: it carries the highscore
        table the title screen is about to show, and the frame rate the player
