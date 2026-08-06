@@ -2876,6 +2876,14 @@ static u8 g_testpar;   /* frame parity of the 2-frame ticks (toggled in the main
    right, and that is enough to find the suspect.    Set to 0 for release. */
 #define BENCH_NOWAIT 0
 
+/* THE HW_PROF SWITCH SITS UP HERE SINCE 06.08., its code further down at
+   the profiler block. Reason: input_update() scripts the whole approach in
+   the profiler ROM (see there) and therefore needs #if HW_PROF long before
+   the profiler block is reached - an #if on an undefined macro is silently
+   false, and the first version of that guard was dead code without any
+   warning. bench_bauen patches the FIRST occurrence: that is this one. */
+#define HW_PROF 0
+
 static u8 g_pad, g_pad_prev, g_pad_pressed;
 /* Silence ONE block permanently without turning on PROFILE_MODE. For
    diagnostic ROMs where the user only has to read off a number - the block
@@ -2913,6 +2921,12 @@ static u8 g_cur_wave; /* test aid: last triggered wave (spawn index) for the HUD
 static u16 g_hwb_takt;      /* frames since the window opened - drives the script */
 static u8  g_hwb_zustand;   /* 0 not started, 1 window open, 2 closed */
 #endif
+#if HW_PROF
+/* Defined next to the profiler further down; the approach script below
+   needs it up here. */
+extern u8 g_prof_fertig;
+#endif
+
 static void input_update(void) {
     g_pad_prev    = g_pad;
     g_pad         = JOYPAD;
@@ -2945,6 +2959,25 @@ static void input_update(void) {
         g_pad = (u8)((g_hwb_takt & 4u) ? J_A : 0u);
         g_hwb_takt++;
     }
+#if HW_PROF
+    /* !! IN THE PROFILER ROM THE PAD IS SCRIPTED ON THE WHOLE APPROACH,
+       not only inside the window. The live pad between the two shops was
+       there so the shop can be left by hand - but it also meant that any
+       button pressed IN FLIGHT steered the ship. On the device (06.08.)
+       the user tried to page early: the directions wedged the ship in the
+       terrain ("steering forward WEDGES THE SHIP", see above), OPTION
+       flipped the display view on top, and because the second shop was
+       never reached the measurement never started - which read as "cannot
+       page, numbers look odd". Now the pad is live ONLY in the shop
+       (g_state check); in flight it fires the same A pulse as the window
+       script, so stray presses cannot steer, and the run to the window is
+       deterministic on top. After g_prof_fertig the game is frozen anyway
+       and the raw-JOYPAD paging reads past g_pad. */
+    else if (!g_prof_fertig && g_state == (u8)STATE_PLAY) {
+        g_pad = (u8)((g_hwb_takt & 4u) ? J_A : 0u);
+        g_hwb_takt++;
+    }
+#endif
 #endif
     g_pad_pressed = g_pad & (u8)(~g_pad_prev);
 }
@@ -7095,7 +7128,8 @@ static void hwb_close(void) {
    price of ONE measuring pair and belongs subtracted from every other
    slot. Without that slot every value would be too large by the measuring
    overhead, and the small sections would be so by the largest percentage. */
-#define HW_PROF 0
+/* The switch itself sits next to HW_BENCH near the top of the file
+   (bench_bauen patches the first occurrence) - see the note there. */
 #define HW_PROF_SLOTS  24u
 /* 64, so that "lines per frame" is a SHIFT (>>6) and not a division:
    16-bit division does exist, but having it in the display path is
@@ -7196,6 +7230,10 @@ static void prof_frame_ende(u8 vbl) {
 #define PROF_B2(n) ((void)0)
 #endif
 #if !HW_BENCH
+/* Without the benchmark there is no profiler, whatever the switch says -
+   #undef, because the definition now sits unconditionally at the top and a
+   1 here would otherwise be a conflicting redefinition. */
+#undef HW_PROF
 #define HW_PROF 0
 #endif
 /* MANDATORY INIT. Every counter here is a static WITHOUT an initialiser -
