@@ -2269,14 +2269,6 @@ u16 g_probe_fenster_iter;   /* Schleifendurchlaeufe, geteilt durch 64 */
 u16 g_probe_fenster_frames; /* frames in which the loop ran at all */
 u16 g_probe_iter_acc;
 #endif
-/* Cross-check for the meta/worm pool shortcut, see meta_frei in
-   enemies_update. Counts the one direction that could lose a spawn: the
-   flag says "full" while a scan of the pool finds a free slot. MUST stay
-   0 - the pools cannot empty inside the loop. 1 = check along. */
-#define PROBE_POOLFREI 0
-#if PROBE_POOLFREI
-u16 g_probe_poolfrei;
-#endif
 /* ===== THE WINDOW OF OPEN WAVES ===== The spawn loop ran over ALL 113
    waves as soon as even ONE was open - and one almost always is. Measured
    with the ROM profiler (slot 20): the largest single item in
@@ -7563,29 +7555,9 @@ static void enemies_update(void) {
        "full" determined once therefore stays right to the end, and a
        "free" is checked again by the inner search anyway. The test is thus
        a pure shortcut, not a second truth. */
-    u8 platz_frei = 0u, meta_frei = 0u, worm_frei = 0u;
+    u8 platz_frei = 0u;
     for (i = 0u; i < MAX_ENEMIES; i++)
         if (!g_enemies[i].active) { platz_frei = 1u; break; }
-    /* THE SAME SHORTCUT FOR THE METASPRITE AND WORM POOLS (06.08.). The
-       comment above already explains why "full once = full for the rest of
-       the loop" holds, and it holds for these two pools for the same
-       reason: inside this loop they can only FILL, deaths happen elsewhere.
-       What was missing is the application: the normal-enemy branch had its
-       shortcut since 05.08., while the metasprite and worm branches still
-       CALLED their spawn function on every open wave in every frame.
-       Counted with the counters gated onto the profiler's own 64 frames
-       (tools/probe_zaehler.py - the ungated first run measured a different
-       stretch and said the opposite): 18.9 spawn attempts per frame ran
-       against full pools, 3.9 of them walked the metasprite pool inside
-       metaenemy_spawn() for nothing. The same error class as the 1130
-       rounds fixed yesterday, one storey further down. Both spawn functions
-       fail ONLY on a full pool, so skipping the call is equivalent - and
-       PROBE_POOLFREI counts the one direction that could go wrong (flag
-       says full, pool has room; must stay 0). */
-    for (i = 0u; i < (u8)MAX_METAENEMIES; i++)
-        if (!g_metaenemies[i].active) { meta_frei = 1u; break; }
-    for (i = 0u; i < (u8)MAX_WORMS; i++)
-        if (!g_worms[i].active) { worm_frei = 1u; break; }
     /* safety net: if something were open without the window knowing about
        it, better one full scan than a lost wave. Must never trigger -
        PROBE_SPAWNFENSTER counts exactly that. */
@@ -7624,14 +7596,6 @@ static void enemies_update(void) {
                 continue;
             }
             if (is_rot) {
-                /* pool full -> the call could only fail; see meta_frei. */
-                if (!worm_frei) {
-#if PROBE_POOLFREI
-                    for (i = 0u; i < (u8)MAX_WORMS; i++)
-                        if (!g_worms[i].active) { g_probe_poolfrei++; break; }
-#endif
-                    continue;
-                }
                 /* Same pattern as the metasprite branch: only count it as
                    used on a successful spawn (no free worm slot means try
                    again next frame). */
@@ -7644,14 +7608,6 @@ static void enemies_update(void) {
                 continue;
             }
             if (is_meta) {
-                /* pool full -> the call could only fail; see meta_frei. */
-                if (!meta_frei) {
-#if PROBE_POOLFREI
-                    for (i = 0u; i < (u8)MAX_METAENEMIES; i++)
-                        if (!g_metaenemies[i].active) { g_probe_poolfrei++; break; }
-#endif
-                    continue;
-                }
                 /* Only count it as used on a SUCCESSFUL spawn - otherwise
                    g_spawn_timer stayed at 0 (no free slot) and tries again
                    next frame instead of losing the chain link silently. */
