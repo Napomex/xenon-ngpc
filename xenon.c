@@ -7154,7 +7154,8 @@ static u16 g_prof_t0;
    variable per nesting depth. Nothing deeper than two is measured here. */
 static u16 g_prof_t0_2;
 static u16 g_prof_fr;
-static u8  g_prof_sicht;      /* angezeigter Slot, LINKS/RECHTS */
+static u8  g_prof_sicht;      /* angezeigter Slot, LINKS/RECHTS/OPTION */
+static u8  g_prof_last_sicht; /* Cache-Schluessel der Anzeige, siehe score_draw */
 static u8  g_prof_pad_alt;    /* own edge detection on the RAW JOYPAD, see the paging */
 /* !! ONE SINGLE GATE FOR BOTH - sections AND denominator. The first
    version let the slots count all the time and kept only g_prof_vbl inside
@@ -12783,6 +12784,19 @@ static void score_draw(void) {
         if (s == g_score_last_shown && aux == g_score_aux_last
             && g_vbc_sum == g_prof_last_vbc && g_prof_sel == g_prof_last_sel) return;
         g_prof_last_sel = g_prof_sel;
+#elif HW_PROF
+        /* !! THE PAGED SLOT BELONGS IN THE CACHE KEY. Without it the
+           display redraws only while something ELSE still changes - on the
+           device that was the settling bar for the first two OPTION
+           presses, and then never again: the paging WORKED (g_prof_sicht
+           advanced) but the picture froze on slot 2. Both hardware
+           sessions stopped "after two presses" with different buttons -
+           the button was never the problem, the cache was. The emulator
+           hid it because its VBlank sum jitters and forced redraws. */
+        if (s == g_score_last_shown && aux == g_score_aux_last
+            && g_vbc_sum == g_prof_last_vbc
+            && g_prof_sicht == g_prof_last_sicht) return;
+        g_prof_last_sicht = g_prof_sicht;
 #else
         if (s == g_score_last_shown && aux == g_score_aux_last
             && g_vbc_sum == g_prof_last_vbc) return;
