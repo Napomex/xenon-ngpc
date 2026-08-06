@@ -15041,8 +15041,13 @@ static void hs_insert(u8 rank, u32 sc, const u8 *name)
 
 /* ONE BYTE OF STATE, AND THAT ON SUFFERANCE. Every static byte added here
    comes straight out of the stack: the free space above the last variable IS
-   the stack (__BaseXSP = end of RAM), and the game was MEASURED needing 316
-   bytes of it (tools/probe_stack.py). So the card geometry is deliberately
+   the stack (__BaseXSP = end of RAM), and only 228 bytes of it are free, of
+   which the game was MEASURED using 158 - 70 bytes spare (tools/probe_stack.py,
+   06.08.2026, for the save ROM as well: the BIOS flash call, which runs on
+   our stack, does NOT go deeper than the normal game path). The figure of
+   316 that stood here until then is not what that tool reports and could not
+   be traced to any measurement; 316 would not even fit. So the card geometry
+   is deliberately
    not cached - it is worked out again on each of the two occasions it is
    needed, twice in a whole session, and parked directly in the library's
    FlashSave* globals, which have to exist anyway because the __ASM block
