@@ -16339,7 +16339,14 @@ void main(void) {
                 u8 roh    = JOYPAD;
                 u8 flanke = (u8)(roh & (u8)~g_prof_pad_alt);
                 g_prof_pad_alt = roh;
-                if (flanke & J_RIGHT)
+                /* OPTION pages FORWARD as well (user report 06.08.: on the
+                   device the paging stuck at slot 2 with the pad). OPTION
+                   is a separate physical button with its own debounce and
+                   is otherwise unused here - the view toggle it normally
+                   drives reads g_pad_pressed, which is SCRIPTED in the
+                   bench window, so the real button never reaches it. One
+                   button is enough: 24 slots in a forward circle. */
+                if (flanke & (u8)(J_RIGHT | J_OPTION))
                     g_prof_sicht = (u8)((g_prof_sicht + 1u) % (u8)HW_PROF_SLOTS);
                 if (flanke & J_LEFT)
                     g_prof_sicht = (u8)((g_prof_sicht + (u8)HW_PROF_SLOTS - 1u) % (u8)HW_PROF_SLOTS);
