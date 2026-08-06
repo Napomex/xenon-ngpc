@@ -1967,6 +1967,30 @@ u8 Sounds_DebugLastSfx(void)
     return s_sound_last_sfx;
 }
 
+#if SOUNDS_Z80_SEQ
+#include "sounds_z80seq.h"
+
+void Sounds_Init(void)
+{
+    u8 *ram;
+    u16 i;
+
+    SOUNDCPU_CTRL = 0xAAAA;
+
+    ram = (u8 *)0x7000;
+    for (i = 0; i < sizeof(s_z80seq); i++) {
+        ram[i] = s_z80seq[i];
+    }
+
+    SOUNDCPU_CTRL = 0x5555;
+    Sounds_ResetState();
+}
+
+void BgmZ80_Cmd(u8 cmd)
+{
+    *(volatile u8 *)Z80SEQ_CMD = cmd;
+}
+#else
 void Sounds_Init(void)
 {
     u8 *ram;
@@ -1982,6 +2006,12 @@ void Sounds_Init(void)
     SOUNDCPU_CTRL = 0x5555;
     Sounds_ResetState();
 }
+
+void BgmZ80_Cmd(u8 cmd)
+{
+    (void)cmd;   /* legacy driver: songs start through the Bgm_* API */
+}
+#endif
 
 void Sounds_Update(void)
 {
@@ -2538,6 +2568,11 @@ void Bgm_SetMasterAttn(u8 attn)
 {
     if (attn > 15) attn = 15;
     s_bgm_master_attn = attn;
+#if SOUNDS_Z80_SEQ
+    /* The sequencer folds the attenuation into every volume itself
+       (MATTN byte of the address protocol). */
+    *(volatile u8 *)Z80SEQ_MATTN = attn;
+#endif
 }
 
 void Bgm_SetVoiceAttn(u8 voice, u8 attn)
@@ -2684,6 +2719,59 @@ void Bgm_DebugSnapshot(BgmDebug *out)
     out->restore_ch1 = s_bgm_restore_ch[0];
 }
 
+#if SOUNDS_Z80_SEQ
+/* Last mask handed to the sequencer. Deliberately NOT trusted at power-on
+   (hardware RAM keeps junk): a junk value only forces one full pass, which
+   then stores the real mask - self-healing after a single call. */
+static u8 s_z80_prev_maske;
+void Bgm_Update(void)
+{
+    u8 ch, maske, n, idx;
+    /* The 60 Hz clock: ONE byte per call - everything else is done by the
+       sequencer on the Z80 (sounds_z80seq.h, tools/z80_seq.py). */
+    *(volatile u8 *)Z80SEQ_TICK = VBCounter;
+    /* SFX hand-over: Sfx_Update() computes the packets as before, here
+       they go raw into the mailbox. The channel mask is s_sfx_active_mask
+       ITSELF (one bit per channel, exactly the driver's "SFX owns the
+       channel" definition); it tells the sequencer where to stay quiet,
+       and the RELEASE restores the running note from the Z80-side shadow.
+       Order on the Z80: mailbox first, then the mask edge - so the last
+       SFX packet lands BEFORE the restore, just like the old driver.
+       SHORTCUT: mask 0 now AND 0 last time means no packet can be valid
+       (packets are only made in play/update paths that set the mask, or
+       in the end frame, where the PREVIOUS mask still stood) and the Z80
+       already knows the 0. Sfx_Stop() would make packets without a mask,
+       but the game never calls it. */
+    maske = s_sfx_active_mask;
+    if ((u8)(maske | s_z80_prev_maske) == 0) return;
+    s_z80_prev_maske = maske;
+    *(volatile u8 *)Z80SEQ_SFXMASK = maske;
+    if (SND_COUNT == 0) {
+        n = 0; idx = 0;
+        for (ch = 0; ch < 4; ch++) {
+            if (s_sfx_cmd[ch].valid) {
+                s_sfx_cmd[ch].valid = 0;
+                /* at most 4 packets into a buffer of 5 - always fits */
+                SND_BUF[idx]     = s_sfx_cmd[ch].b1;
+                SND_BUF[idx + 1] = s_sfx_cmd[ch].b2;
+                SND_BUF[idx + 2] = s_sfx_cmd[ch].b3;
+                idx = (u8)(idx + 3); n++;
+            }
+            if (s_sfx_end_pending[ch]) {
+                s_sfx_end_pending[ch] = 0;
+                s_bgm_ch_used_by_sfx[ch] = 0;
+            }
+        }
+        if (n) SND_COUNT = n;
+    } else {
+        /* Z80 lagging (practically never happens): drop the packet like
+           the old driver did, counted in the existing diagnostics. */
+        s_sound_fault = 1;
+        s_sound_drops++;
+        for (ch = 0; ch < 4; ch++) s_sfx_cmd[ch].valid = 0;
+    }
+}
+#else
 void Bgm_Update(void)
 {
     u8 elapsed;
@@ -2881,3 +2969,4 @@ void Bgm_Update(void)
         elapsed--;
     }
 }
+#endif  /* SOUNDS_Z80_SEQ */

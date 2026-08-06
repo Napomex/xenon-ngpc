@@ -13,6 +13,16 @@
 #endif
 extern const u8 NOTE_TABLE[] SOUNDS_WEAK_SYMBOL;
 
+/* 1 = the Z80 sequencer plays the music (sounds_z80seq.h, built by
+   tools/z80_seq.py): Sounds_Init uploads it, Bgm_Update shrinks to one
+   tick byte plus the SFX hand-over, and songs start via BgmZ80_Cmd().
+   The whole BgmVoice machinery below is then dead weight in ROM but keeps
+   compiling - diagnostic ROMs (sndtest) may still want it at 0. */
+#ifndef SOUNDS_Z80_SEQ
+#define SOUNDS_Z80_SEQ 1
+#endif
+void BgmZ80_Cmd(unsigned char cmd);
+
 #ifndef SOUNDS_MAX_CATCHUP
 /* 0 = no clamp. If >0, cap BGM catch-up frames per update to avoid long stalls. */
 #define SOUNDS_MAX_CATCHUP 0

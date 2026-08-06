@@ -54,15 +54,18 @@ static void sfx(u8 id) { sfx_orig_play(id); }
    arrangement carried THEME_*_LOOP offsets that all sat on the same song
    frame for exactly that reason.) */
 static void music_start_theme(void) {
+#if SOUNDS_Z80_SEQ
+    /* THE Z80 PLAYS (sounds_z80seq.h, tools/z80_seq.py): song data and
+       note table already live in its RAM since Sounds_Init, one command
+       byte starts the looping theme. The CH2 question resolved itself on
+       the way: X_THEME_CH2 contains NO notes at all (155.7 s of rests, a
+       placeholder of the DOS conversion) - the "fourth voice" was always
+       empty, on every driver. */
+    Bgm_SetMasterAttn(MUSIC_ATTN);   /* writes the sequencer's MATTN byte */
+    BgmZ80_Cmd(1u);                  /* 1 = theme, looping */
+#else
     Bgm_SetNoteTable(X_THEME_NOTE_TABLE);
-    /* CH2 (the second accompaniment voice) is deliberately silent - heard
-       and accepted by the user (06.08., "3 ist okay", A/B WAV captures in
-       the session). Costs measured with the 30 Hz driver tick: 42.8 ->
-       38.7 raster lines per frame in the calibrated emulator. A NULL
-       stream disables the voice cleanly (BgmVoice_StartEx checks it);
-       the freed tone channel also means one channel less for the SFX
-       system to fight over. Full array stays in ROM - one line brings
-       it back. */
+    /* CH2 carries no notes (see above) - a NULL stream skips it cleanly. */
     Bgm_StartLoop4Ex(X_THEME_CH0, 0, X_THEME_CH1, 0,
                      0, 0, X_THEME_CHN, 0);
     /* Music 4 dB below its own nominal level so the effects carry. Measured:
@@ -76,6 +79,7 @@ static void music_start_theme(void) {
        the g_hs_shown incident). Setting it on every tune start makes the
        value independent of whatever was in RAM at power-on. */
     Bgm_SetMasterAttn(MUSIC_ATTN);
+#endif
 }
 
 /* ========================================================================
