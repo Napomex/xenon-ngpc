@@ -1899,7 +1899,7 @@ static u8  g_wp_mount[LVL_WEAPON_COUNT];   /* FIRST position of the weapon, 0xFF
 static u8  g_mount_wp[LVL_MOUNT_COUNT];    /* weapon at this position, 0xFF = free */
 static u16 g_wp_mount_for;                 /* the weapons_active it holds for */
 static u8  g_wp_mount_gen, g_wp_mount_seen;  /* copies can change without the bitmask changing */
-static u16 g_wp_maske_gesehen;   /* letzte abgeglichene weapons_active, siehe wp_mounts_sync */
+static u16 g_wp_maske_gesehen;   /* last weapons_active the mounts were synced against, see wp_mounts_sync */
 static u8  g_wp_mount_done;
 
 /* Redistribute. Order = weapon index; that is the only stable one we have
@@ -1967,14 +1967,14 @@ static void wp_mounts_assign(void) {
    distribution hung on the mask alone would never notice. Every place that
    changes a copy count bumps g_wp_mount_gen. */
 static void wp_mounts_sync(void) {
-    /* !! DER ABGLEICH LIEF BEI JEDEM AUFRUF UEBER ALLE ELF WAFFEN - und
-       aufgerufen wird je Waffe UND je Kopie, aus der Zeichenschleife wie
-       aus wp_spawn(). Gemessen auf Hardware (05.08.): das Zeichnen des
-       Waffenmoduls kostet 7 bis 10 VBlanks je 30 Frames, so viel wie das
-       Zeichnen ALLER Gegner - fuer ein einziges kleines Sprite. Der
-       Abgleich ist aber nur noetig, wenn sich die Maske seit dem letzten
-       Mal geaendert hat; sonst hat er nichts zu tun und laeuft trotzdem.
-       Eingebaut habe ich das gestern mit der Mehrfachmontage. */
+    /* !! THE SYNC RAN OVER ALL ELEVEN WEAPONS ON EVERY CALL - and it is
+       called per weapon AND per copy, from the drawing loop as well as
+       from wp_spawn(). Measured on hardware (05.08.): drawing the weapon
+       module costs 7 to 10 VBlanks per 30 frames, as much as drawing ALL
+       the enemies - for one single small sprite. But the sync is only
+       needed when the mask has changed since last time; otherwise it has
+       nothing to do and runs anyway. This came in yesterday with the
+       multiple mounts. */
     if (g_wp_maske_gesehen != g_player.weapons_active) {
         g_wp_maske_gesehen = g_player.weapons_active;
         if (wp_copies_sync_mask()) g_wp_mount_gen++;
@@ -2254,37 +2254,35 @@ static u16     g_spawn_scroll_row;
 /* Number of waves with members still outstanding. Saves the 113-entry loop
    in enemies_update while nothing is pending, which is the normal case. */
 static u8      g_spawn_pending;
-/* !! HIER, NICHT BEIM PROFILER. Erst stand dieser Block hinter
-   hwb_close() - also INNERHALB von `#if HW_BENCH`. Mit HW_BENCH 0
-   fehlten die Zaehler, waehrend die Gegenprobe unten sie weiter
-   benutzte: der Bau brach ab, und ohne den Selbsttest von
-   bench_bauen.py ("xenon.ngp ist unveraendert") waere die ALTE ROM
-   gemessen worden. Genau die Falle, gegen die dieser Test dort steht. */
-/* Gegenprobe zum Wellenfenster, siehe g_spawn_lo. 1 = mitpruefen. */
+/* !! HERE, NOT DOWN WITH THE PROFILER. This block first sat behind
+   hwb_close() - that is, INSIDE `#if HW_BENCH`. With HW_BENCH 0 the
+   counters were missing while the cross-check below kept using them: the
+   build broke off, and without the self-test in bench_bauen.py ("xenon.ngp
+   is unchanged") the OLD ROM would have been measured. Exactly the trap
+   that test is standing there against. */
+/* cross-check for the wave window, see g_spawn_lo. 1 = check along. */
 #define PROBE_SPAWNFENSTER 0
 #if PROBE_SPAWNFENSTER
 u16 g_probe_fenster_diff;   /* verlorene Wellen - MUSS 0 bleiben */
 u16 g_probe_fenster_seen;   /* offene Wellen insgesamt gesehen */
 u16 g_probe_fenster_iter;   /* Schleifendurchlaeufe, geteilt durch 64 */
-u16 g_probe_fenster_frames; /* Frames, in denen die Schleife ueberhaupt lief */
+u16 g_probe_fenster_frames; /* frames in which the loop ran at all */
 u16 g_probe_iter_acc;
 #endif
-/* ===== DAS FENSTER DER OFFENEN WELLEN =====
-   Die Spawn-Schleife lief ueber ALLE 113 Wellen, sobald auch nur EINE
-   offen war - und offen ist fast immer eine. Mit dem ROM-Profiler gemessen
-   (Slot 20): der groesste Einzelposten in enemies_update, deutlich vor der
-   Bewegung der Gegner und VIERZIGMAL so teuer wie der Trigger-Scan, den
-   der Kommentar dort fuer den Uebeltaeter hielt.
-   Wellen feuern in Zeilenreihenfolge, die offenen liegen also dicht
-   beieinander. Zwei Byte merken sich den ersten und letzten offenen Index;
-   gescannt wird nur noch dieser Bereich.
-   !! DAS FENSTER IST EINE OBERMENGE, NIE EINE AUSWAHL. Es wird beim Feuern
-   aufgeweitet und bei jedem Durchlauf aus dem tatsaechlichen Bestand neu
-   berechnet - eine Welle kann einen Frame laenger drinstehen als noetig
-   (harmlos), aber keine kann herausfallen. Genau das prueft
-   PROBE_SPAWNFENSTER nach.
-   Ohne Initialisierer und in spawn_state_reset() ausdruecklich gesetzt:
-   ein static traegt auf HARDWARE Muell (CLAUDE.md 6.1). */
+/* ===== THE WINDOW OF OPEN WAVES ===== The spawn loop ran over ALL 113
+   waves as soon as even ONE was open - and one almost always is. Measured
+   with the ROM profiler (slot 20): the largest single item in
+   enemies_update, well ahead of moving the enemies and FORTY TIMES as
+   expensive as the trigger scan that the comment there held to be the
+   culprit. Waves fire in row order, so the open ones sit close together.
+   Two bytes remember the first and the last open index; only that range is
+   scanned any more. !! THE WINDOW IS A SUPERSET, NEVER A SELECTION. It is
+   widened when a wave fires and recomputed from the ACTUAL stock on every
+   pass - a wave can sit in it one frame longer than needed (harmless), but
+   none can drop out of it. That is exactly what PROBE_SPAWNFENSTER
+   verifies. Without an initialiser and set explicitly in
+   spawn_state_reset(): a static carries garbage on HARDWARE (CLAUDE.md
+   6.1). */
 static u8      g_spawn_lo;           /* erster offener Index, 0xFF = keiner */
 static u8      g_spawn_hi;           /* letzter offener Index */
 #define SPAWN_FENSTER_LEER 0xFFu
@@ -5022,16 +5020,16 @@ static void bar_draw_at(u8 row) {
        colours, on screen "11111" (user report 04.08.). Whoever redraws the
        bar now brings its colours along - this is the one place where the
        two certainly belong together. */
-    /* !! DAS wait_vblank() HIER IST NICHT DER PREIS DER LEISTE - GEMESSEN.
-       Verdacht war: bar_pal_load() enthaelt ein blockierendes Warten, laeuft
-       am Frameende und wirft den Rest weg. Klang zwingend. Auf Hardware
-       gemessen (05.08.): ohne diesen Aufruf **146** gegen eine Referenz von
-       145-148 - also kein Unterschied. Der Aufruf bleibt deshalb stehen; er
-       kostet nichts und faengt einen echten Fehler ab.
-       Der Neuaufbau kostet trotzdem 7 bis 10 VBlanks (Block 25 aus: 138).
-       Es sind also die 60 Kachelkarten-Schreibzugriffe darueber, nicht das
-       Warten. Wer hier optimieren will, muss NUR DIE GEAENDERTEN SPALTEN
-       schreiben statt aller zwanzig. */
+    /* !! THE wait_vblank() HERE IS NOT THE PRICE OF THE BAR - MEASURED.
+       The suspicion was: bar_pal_load() contains a blocking wait, runs at
+       the end of the frame and throws the rest of it away. It sounded
+       compelling. Measured on hardware (05.08.): without this call **146**
+       against a reference of 145-148 - so no difference at all. The call
+       therefore stays; it costs nothing and catches a real error. The
+       rebuild still costs 7 to 10 VBlanks (block 25 off: 138). So it is
+       the 60 tilemap writes above it, not the wait. Whoever wants to
+       optimise here has to write ONLY THE CHANGED COLUMNS instead of all
+       twenty. */
     bar_pal_load();
     /* The bar row was (re)drawn, so invalidate the digit cache and let
        score_draw() put the score tiles back onto this row. */
@@ -5855,7 +5853,7 @@ static void player_init(void) {
        would be a hard fault to explain. */
     for (w = 0u; w < (u8)LVL_WEAPON_COUNT; w++) g_wp_power[w] = 0u;
     for (w = 0u; w < (u8)LVL_WEAPON_COUNT; w++) g_wp_copies[w] = 0u;
-    g_wp_maske_gesehen = 0xFFFFu;   /* erzwingt einen Abgleich, siehe wp_mounts_sync */
+    g_wp_maske_gesehen = 0xFFFFu;   /* forces a sync, see wp_mounts_sync */
     /* Explicitly, like everything else here: an uninitialised static that
        happens to hold a valid weapon number would suppress the redraw on a
        slot handover, and the module would show the previous weapon's
@@ -7034,82 +7032,73 @@ static void hwb_close(void) {
     g_hwb_erg = (u16)(g_hwb_n ? (u16)(g_hwb_sum / g_hwb_n) : 0u);
 }
 
-/* ===== HW_PROF - DER PROFILER IM ROM, EINE MESSUNG STATT ZEHN ROMS =====
-   Bis heute wurde jeder Block dadurch vermessen, dass man ihn ABSCHALTET und
-   die Differenz nimmt. Am 05.08. ist diese Methode fuer die Kollisionen
-   nachweislich durchgefallen: Block 4 aus ergab -0,3 %, Unterblock 27 aus
-   sogar +1,3 %. Wer einen Treffer verhindert, laesst das Ziel leben, und es zu
-   zeichnen kostet mehr als der Test. **Die Szene aendert sich, also misst man
-   etwas anderes.**
-
-   Hier wird nichts abgeschaltet. Es wird die ZEIT GELESEN, vor und nach jedem
-   Abschnitt, im normal laufenden Spiel. Ein Lauf, alle Abschnitte, Szene
-   unveraendert - die Fehlerklasse existiert nicht mehr.
-
-   DIE UHR: RAS_Y (0x8009) zaehlt die Rasterzeile 0..198, also 199 Zeilen je
-   Frame zu je rund 515 Zyklen - dreissigmal feiner als das VBlank-Raster, mit
-   dem bisher gemessen wurde. RAS_Y allein laeuft aber alle 199 Zeilen ueber,
-   und ein grosser Block dauert laenger als das (Zeichnen lag bei 43 von 146
-   VBlanks, das sind ueber 200 Zeilen) - er wuerde stillschweigend zu klein
-   gemessen. Deshalb VBCounter dazu:
-
-       t = VBCounter * 199 + ((RAS_Y >= 152) ? RAS_Y - 152 : RAS_Y + 47)
-
-   !! DIE 152 IST GEMESSEN, NICHT GERATEN: VBCounter zaehlt genau dann hoch,
-   wenn RAS_Y 152 erreicht (im Emulator ueber 38 Uebergaenge geprueft, ein
-   einziger Wert, keine Streuung). Damit ist t monoton, und Differenzen
-   stimmen bis 65535 Zeilen statt bis 199.
-
-   VBCounter ist u8 und laeuft alle 256 Frames um; t springt dort zurueck.
-   Solche Differenzen sind unsinnig gross und werden verworfen statt
-   mitgezaehlt - rund einmal je 256 Frames, gezaehlt in g_prof_verworfen.
-
-   !! DIE MESSUNG KOSTET SELBST ETWAS, DESHALB MISST SIE SICH SELBST.
-   Slot 15 ist ein LEERER Abschnitt: PROF_A direkt gefolgt von PROF_B. Was
-   dort steht, ist der Preis EINES Messpaares und gehoert von jedem anderen
-   Slot abgezogen. Ohne diesen Slot waere jeder Wert um den Messaufwand zu
-   gross, und die kleinen Abschnitte waeren es prozentual am staerksten. */
+/* ===== HW_PROF - THE PROFILER IN THE ROM, ONE MEASUREMENT INSTEAD OF TEN
+   ROMS ===== Until today every block was measured by SWITCHING IT OFF and
+   taking the difference. On 05.08. that method demonstrably failed for the
+   collisions: block 4 off came out at -0.3 %, sub-block 27 off even at
+   +1.3 %. Whoever prevents a hit lets the target live, and drawing it
+   costs more than the test. **The scene changes, so you are measuring
+   something else.** Here nothing is switched off. THE TIME IS READ, before
+   and after each section, in the normally running game. One run, all
+   sections, scene unchanged - the error class no longer exists. THE CLOCK:
+   RAS_Y (0x8009) counts the raster line 0..198, so 199 lines per frame at
+   roughly 515 cycles each - thirty times finer than the VBlank grid
+   measured with so far. RAS_Y on its own wraps every 199 lines though, and
+   a big block lasts longer than that (drawing was 43 of 146 VBlanks, which
+   is over 200 lines) - it would have measured itself silently too small.
+   Hence VBCounter on top: t = VBCounter * 199 + ((RAS_Y >= 152) ? RAS_Y -
+   152 : RAS_Y + 47) !! THE 152 IS MEASURED, NOT GUESSED: VBCounter
+   increments exactly when RAS_Y reaches 152 (checked in the emulator over
+   38 transitions, a single value, no spread). That makes t monotonic, and
+   differences hold up to 65535 lines instead of up to 199. VBCounter is u8
+   and wraps every 256 frames; t jumps backwards there. Such differences
+   are nonsensically large and are discarded rather than counted in - about
+   once every 256 frames, counted in g_prof_verworfen. !! THE MEASUREMENT
+   COSTS SOMETHING ITSELF, SO IT MEASURES ITSELF. Slot 15 is an EMPTY
+   section: PROF_A immediately followed by PROF_B. What stands there is the
+   price of ONE measuring pair and belongs subtracted from every other
+   slot. Without that slot every value would be too large by the measuring
+   overhead, and the small sections would be so by the largest percentage. */
 #define HW_PROF 0
 #define HW_PROF_SLOTS  24u
-/* 64, damit "Zeilen je Frame" ein SCHIEBEN ist (>>6) und keine Division:
-   16-Bit-Division gibt es, aber sie im Anzeigepfad zu haben ist unnoetig.
-   64 Frames sind bei rund 800 Zeilen je Frame 51200 Zeilen - ein Abschnitt
-   mit 50 % Anteil landet bei 25600 und passt noch in u16. */
+/* 64, so that "lines per frame" is a SHIFT (>>6) and not a division:
+   16-bit division does exist, but having it in the display path is
+   unnecessary. At roughly 800 lines per frame, 64 frames are 51200 lines -
+   a section with a 50 % share lands at 25600 and still fits in u16. */
 #define HW_PROF_FRAMES 64u
 #if HW_PROF
-/* NICHT static: eine Sonde von aussen muss sie ueber xenon.map finden.
-   Auf HARDWARE liest der Nutzer die Zahlen vom Bildschirm ab, im Emulator
-   die Probe aus dem RAM - beide Wege muessen dasselbe zeigen, sonst misst
-   der Profiler das eine und zeigt das andere. */
+/* NOT static: a probe from outside has to find them via xenon.map. On
+   HARDWARE the user reads the numbers off the screen, in the emulator the
+   probe reads them out of RAM - both ways have to show the same thing,
+   otherwise the profiler measures one thing and displays another. */
 u16 g_prof_acc[HW_PROF_SLOTS];
-u16 g_prof_vbl;               /* VBlanks der Messstrecke - der Nenner fuer die Anteile */
+u16 g_prof_vbl;               /* VBlanks of the measured stretch - the denominator for the shares */
 u8  g_prof_fertig;
 u8  g_prof_verworfen;         /* verworfene Differenzen (VBCounter-Umlauf) */
 static u16 g_prof_t0;
-/* !! ZWEITE EBENE, WEIL MESSPAARE SICH SONST GEGENSEITIG ZERSTOEREN.
-   Slot 2 umschliesst enemies_update(), die Slots 19..22 liegen DARIN.
-   Mit einem gemeinsamen g_prof_t0 wuerde das innere PROF_A den
-   Startpunkt des aeusseren ueberschreiben, und der aeussere Slot
-   bekaeme den Wert des letzten inneren Abschnitts - eine Zahl, die
-   plausibel aussieht und nichts bedeutet. Darum eine eigene Variable
-   je Schachtelungstiefe. Tiefer als zwei wird hier nicht gemessen. */
+/* !! A SECOND LEVEL, BECAUSE MEASURING PAIRS WOULD OTHERWISE DESTROY EACH
+   OTHER. Slot 2 encloses enemies_update(), slots 19..22 lie INSIDE it.
+   With a shared g_prof_t0 the inner PROF_A would overwrite the outer one's
+   start point, and the outer slot would get the value of the last inner
+   section - a number that looks plausible and means nothing. Hence one
+   variable per nesting depth. Nothing deeper than two is measured here. */
 static u16 g_prof_t0_2;
 static u16 g_prof_fr;
 static u8  g_prof_sicht;      /* angezeigter Slot, LINKS/RECHTS */
-static u8  g_prof_pad_alt;    /* eigene Flankenerkennung auf dem ROHEN JOYPAD, siehe Blaettern */
-/* !! EIN EINZIGES TOR FUER BEIDES - Abschnitte UND Nenner.
-   Die erste Fassung liess die Slots immer mitzaehlen und nur g_prof_vbl im
-   Fenster - Zaehler und Nenner kamen also aus verschiedenen Strecken, und
-   die Anteile waren frei erfunden (im Emulator sofort sichtbar: Slots
-   voll, Nenner 0). Jetzt entscheidet g_prof_an ueber beides, und es wird
-   an genau EINER Stelle gesetzt, am Framerand. */
+static u8  g_prof_pad_alt;    /* own edge detection on the RAW JOYPAD, see the paging */
+/* !! ONE SINGLE GATE FOR BOTH - sections AND denominator. The first
+   version let the slots count all the time and kept only g_prof_vbl inside
+   the window - numerator and denominator came from different stretches,
+   and the shares were pure invention (immediately visible in the emulator:
+   slots full, denominator 0). Now g_prof_an decides both, and it is set in
+   exactly ONE place, at the frame boundary. */
 static u8  g_prof_an;
 
 static u16 prof_uhr(void) {
     u8  l = RAS_Y;
     u8  v = VBCounter;
     u16 t;
-    /* auf den VBlank-Punkt normieren, siehe oben: 199 - 152 = 47 */
+    /* normalise onto the VBlank point, see above: 199 - 152 = 47 */
     if (l >= 152u) l = (u8)(l - 152u);
     else           l = (u8)(l + 47u);
     t = (u16)v;
@@ -7123,9 +7112,9 @@ static void prof_zu(u8 n, u16 t0) {
     u16 jetzt, d, a;
     jetzt = prof_uhr();
     d = (u16)(jetzt - t0);
-    if (d > 2000u) { g_prof_verworfen++; return; }   /* VBCounter-Umlauf, siehe oben */
-    /* getrennte Anweisungen, kein Index in einer zusammengesetzten Rechnung
-       - die cc900-Regel aus dem VBC-Ringpuffer weiter oben. */
+    if (d > 2000u) { g_prof_verworfen++; return; }   /* VBCounter wrap, see above */
+    /* separate statements, no index inside a compound expression - the
+       cc900 rule from the VBC ring buffer further up. */
     a = g_prof_acc[n];
     if (a < 60000u) { a = (u16)(a + d); g_prof_acc[n] = a; }
 }
@@ -7133,22 +7122,22 @@ static void prof_b(u8 n)  { if (g_prof_an) prof_zu(n, g_prof_t0); }
 static void prof_b2(u8 n) { if (g_prof_an) prof_zu(n, g_prof_t0_2); }
 static void prof_reset(void) {
     u8 k;
-    /* Jeder Zaehler ausdruecklich gesetzt - ein static ohne Initialisierer
-       traegt auf HARDWARE Muell, und der Emulator kann das nicht zeigen
-       (CLAUDE.md 6.1). Genau diese Klasse hat den Benchmark schon einmal
-       stumm uebersprungen. */
+    /* Every counter set explicitly - a static without an initialiser
+       carries garbage on HARDWARE, and the emulator cannot show that
+       (CLAUDE.md 6.1). Exactly this class once made the benchmark skip
+       silently. */
     for (k = 0u; k < (u8)HW_PROF_SLOTS; k++) g_prof_acc[k] = 0u;
     g_prof_t0 = 0u; g_prof_t0_2 = 0u; g_prof_fr = 0u; g_prof_vbl = 0u;
     g_prof_fertig = 0u; g_prof_sicht = 0u; g_prof_verworfen = 0u;
     g_prof_an = 0u; g_prof_pad_alt = 0u;
 }
-/* Ein Spielframe ist vorbei. Nur waehrend des offenen Benchmark-Fensters,
-   damit die Messstrecke dieselbe ist wie beim VBlank-Wert daneben. */
+/* A game frame is over. Only while the benchmark window is open, so that
+   the measured stretch is the same one as for the VBlank value next to it. */
 static void prof_frame_ende(u8 vbl) {
-    /* fps_tick meldet die VBlanks des GERADE BEENDETEN Frames. Gezaehlt
-       wird es genau dann, wenn dessen Abschnitte auch gemessen wurden -
-       darum zuerst das alte g_prof_an auswerten und erst danach das neue
-       setzen. Sonst haengen Zaehler und Nenner ein Frame auseinander. */
+    /* fps_tick reports the VBlanks of the frame that has JUST ENDED. It is
+       counted exactly when that frame's sections were measured too - so
+       evaluate the old g_prof_an first and only then set the new one.
+       Otherwise numerator and denominator are one frame apart. */
     if (g_prof_an) {
         g_prof_vbl = (u16)(g_prof_vbl + (u16)vbl);
         g_prof_fr++;
@@ -7162,8 +7151,8 @@ static void prof_frame_ende(u8 vbl) {
 #define PROF_B2(n) prof_b2((u8)(n))
 #endif
 #endif
-/* Ausserhalb des HW_BENCH-Blocks: die Aufrufstellen stehen im normalen
-   Spielcode und muessen auch dann uebersetzen, wenn gar nicht gemessen wird. */
+/* Outside the HW_BENCH block: the call sites sit in the normal game code
+   and have to compile even when nothing is being measured. */
 #ifndef PROF_A
 #define PROF_A()   ((void)0)
 #define PROF_B(n)  ((void)0)
@@ -7192,9 +7181,9 @@ static void vbc_stats_reset(void) {
 static void fps_tick(u8 frame_ref) {
     u8 vbc = (u8)(VBCounter - frame_ref);   /* the u8 subtraction wraps correctly */
 #if HW_PROF
-    /* Hier, nicht im 30-Frame-Fenster darunter: der Profiler misst eine
-       eigene, kuerzere Strecke (HW_PROF_FRAMES) und braucht die VBlanks
-       DIESES Frames als Nenner. */
+    /* Here, not in the 30-frame window below: the profiler measures its
+       own, shorter stretch (HW_PROF_FRAMES) and needs THIS frame's VBlanks
+       as the denominator. */
     prof_frame_ende(vbc);
 #endif
 #if OAM_IN_SCORE
@@ -7465,9 +7454,8 @@ static void enemies_update(void) {
                 g_spawn_left[s]  = lvl_spawn_count[s];
                 if (g_spawn_left[s]) {
                     g_spawn_pending++;   /* see g_spawn_pending */
-                    /* Fenster aufweiten - die EINZIGE Stelle, die eine Welle
-                       OEFFNET (jeder andere Schreibzugriff auf g_spawn_left
-                       setzt auf 0). */
+                    /* widen the window - the ONLY place that OPENS a wave
+                       (every other write to g_spawn_left sets it to 0). */
                     if (g_spawn_lo == SPAWN_FENSTER_LEER) { g_spawn_lo = s; g_spawn_hi = s; }
                     else { if (s < g_spawn_lo) g_spawn_lo = s;
                            if (s > g_spawn_hi) g_spawn_hi = s; }
@@ -7480,7 +7468,7 @@ static void enemies_update(void) {
         }
     }
 
-    PROF_B2(19);   /* Slot 19: Trigger-Scan (nur bei Zeilenwechsel) */
+    PROF_B2(19);   /* slot 19: trigger scan (only on a row change) */
     /* This loop used to run over all 113 waves EVERY frame even when none
        had members outstanding, which is nearly always. g_spawn_pending
        counts how many waves are still open; at 0 the whole loop is
@@ -7489,25 +7477,23 @@ static void enemies_update(void) {
     if (!g_spawn_pending) { g_spawn_lo = SPAWN_FENSTER_LEER; g_spawn_hi = 0u; }
     else {
     u8 f_lo = SPAWN_FENSTER_LEER, f_hi = 0u;
-    /* ===== IST UEBERHAUPT EIN GEGNERPLATZ FREI? EINMAL, NICHT JE WELLE =====
-       Der teure Teil dieser Schleife ist nicht der Wellenscan, sondern was
-       JEDE offene Welle darin tut: sie sucht sich mit einer eigenen
-       Schleife ueber alle MAX_ENEMIES Plaetze einen freien. Ist der Pool
-       voll - und in einer dichten Szene ist er das dauernd, weil das Schiff
-       nicht ausweicht - findet KEINE davon einen, jede zahlt aber ihre
-       zehn Durchlaeufe. Bei 113 offenen Wellen sind das 1130 Runden je
-       Frame, um nichts zu tun.
-       Der Pool kann sich innerhalb dieser Schleife nur FUELLEN, nie leeren
-       (Gegner sterben anderswo). Ein einmal ermitteltes "voll" bleibt also
-       bis zum Ende richtig, und ein "frei" wird von der inneren Suche
-       ohnehin noch einmal geprueft. Der Test ist damit eine reine
-       Abkuerzung, keine zweite Wahrheit. */
+    /* ===== IS AN ENEMY SLOT FREE AT ALL? ONCE, NOT PER WAVE ===== The
+       expensive part of this loop is not the wave scan but what EVERY open
+       wave does inside it: with a loop of its own it searches all
+       MAX_ENEMIES places for a free one. If the pool is full - and in a
+       dense scene it constantly is, because the ship does not dodge - NONE
+       of them finds one, yet every one pays its ten passes. With 113 open
+       waves that is 1130 rounds per frame to do nothing. Inside this loop
+       the pool can only FILL, never empty (enemies die elsewhere). A
+       "full" determined once therefore stays right to the end, and a
+       "free" is checked again by the inner search anyway. The test is thus
+       a pure shortcut, not a second truth. */
     u8 platz_frei = 0u;
     for (i = 0u; i < MAX_ENEMIES; i++)
         if (!g_enemies[i].active) { platz_frei = 1u; break; }
-    /* Sicherung: stuende etwas offen, ohne dass das Fenster es kennt, wird
-       lieber einmal voll gescannt als eine Welle verloren. Darf nie
-       zuschlagen - PROBE_SPAWNFENSTER zaehlt genau das mit. */
+    /* safety net: if something were open without the window knowing about
+       it, better one full scan than a lost wave. Must never trigger -
+       PROBE_SPAWNFENSTER counts exactly that. */
     if (g_spawn_lo == SPAWN_FENSTER_LEER) { g_spawn_lo = 0u; g_spawn_hi = (u8)(LVL_SPAWN_COUNT - 1u); }
 #if PROBE_SPAWNFENSTER
     g_probe_fenster_frames++;
@@ -7566,11 +7552,11 @@ static void enemies_update(void) {
                 }
                 continue;
             }
-            /* Pool voll -> diese Welle kann nichts setzen. Genau das
-               taete die Suche unten auch, nur mit zehn Runden. Kein
-               Zustand aendert sich dabei (g_spawn_timer bleibt 0, der
-               naechste Frame versucht es wieder), das Ueberspringen ist
-               also gleichwertig. */
+            /* pool full -> this wave cannot place anything. That is
+               exactly what the search below would find as well, only with
+               ten passes. No state changes in the process (g_spawn_timer
+               stays 0, the next frame tries again), so skipping it is
+               equivalent. */
             if (!platz_frei) continue;
             spawned = 0u;
             for (i = 0u; i < MAX_ENEMIES; i++) {
@@ -7653,28 +7639,27 @@ static void enemies_update(void) {
             g_spawn_timer[s]--;
         }
     }
-    /* Fenster aus dem TATSAECHLICHEN Bestand neu setzen: so schrumpft es
-       von selbst wieder, auch nachdem es einmal weit war. */
+    /* set the window afresh from the ACTUAL stock: that way it shrinks
+       back on its own, even after it has once been wide. */
     g_spawn_lo = f_lo;
     g_spawn_hi = (u8)((f_lo == SPAWN_FENSTER_LEER) ? 0u : f_hi);
-    /* !! UND HIER STECKT DER EIGENTLICHE FEHLER, den erst der Profiler
-       sichtbar gemacht hat. g_spawn_pending soll zaehlen, wie viele Wellen
-       noch offen sind; heruntergezaehlt wird es aber nur auf den Wegen,
-       die eine Welle regulaer leeren. Die Sammelruecksetzungen
-       (Checkpoint-Wiedereinstieg, BENCH-Aufbauten) nullen g_spawn_left
-       fuer alle Wellen, ohne den Zaehler mitzunehmen - er bleibt positiv,
-       waehrend nichts mehr offen ist, und die Schleife lief von da an
-       JEDEN FRAME ueber alle 113 Wellen, um jedes Mal nichts zu finden.
-       Gemessen: 419 tatsaechlich offene Wellen-Frames im ganzen Lauf,
-       aber 36,6 Rasterzeilen je Frame in dieser Schleife.
-       Dieser Durchlauf hat gerade festgestellt, dass nichts offen ist -
-       damit ist der Zaehler nachweislich veraltet und wird berichtigt. */
+    /* !! AND HERE SITS THE REAL BUG, which only the profiler made visible.
+       g_spawn_pending is meant to count how many waves are still open; but
+       it is decremented only on the paths that empty a wave regularly. The
+       bulk resets (checkpoint re-entry, BENCH setups) zero g_spawn_left
+       for all waves without taking the counter along - it stays positive
+       while nothing is open any more, and from then on the loop ran over
+       all 113 waves EVERY FRAME to find nothing every time. Measured: 419
+       genuinely open wave-frames in the whole run, but 36.6 raster lines
+       per frame in this loop. This pass has just established that nothing
+       is open - which makes the counter demonstrably stale, and it is
+       corrected. */
     if (f_lo == SPAWN_FENSTER_LEER) g_spawn_pending = 0u;
     }
 #if PROBE_SPAWNFENSTER
-    /* Gegenprobe: liegt nach dem Durchlauf noch eine offene Welle
-       AUSSERHALB des Fensters, hat das Fenster sie verloren. Muss 0
-       bleiben. Kostet einen vollen 113er-Scan je Frame - nur zum Pruefen. */
+    /* cross-check: if an open wave still lies OUTSIDE the window after the
+       pass, the window has lost it. Must stay 0. Costs a full 113-wave
+       scan per frame - purely for checking. */
     { u8 q, lo = g_spawn_lo, hi = g_spawn_hi;
       for (q = 0u; q < (u8)LVL_SPAWN_COUNT; q++) {
           if (!g_spawn_left[q]) continue;
@@ -7683,7 +7668,7 @@ static void enemies_update(void) {
       } }
 #endif
 
-    PROF_B2(20);   /* Slot 20: Spawn-Schleife ueber die offenen Wellen */
+    PROF_B2(20);   /* slot 20: spawn loop over the open waves */
     PROF_A2();
     for (i = 0u; i < MAX_ENEMIES; i++) {
         u16 len, off;
@@ -7769,10 +7754,10 @@ static void enemies_update(void) {
             PROF_A2();
             enemy_fire_tick(&g_enemies[i]);
             PROF_B2(22);            /* Slot 22: Feuern (je Gegner) */
-            PROF_A2();              /* weiter mit der Bewegung des naechsten */
+            PROF_A2();              /* on to moving the next one */
         }
     }
-    PROF_B2(21);   /* Slot 21: Rest der Bewegungsschleife */
+    PROF_B2(21);   /* slot 21: rest of the movement loop */
 }
 
 #if BENCH_DETERM
@@ -9346,18 +9331,16 @@ static void wallworms_update(void) {
        find_ring_row). */
     {
         u16 prow = (u16)(g_scroll_y >> 3);
-        /* !! DER RAND GILT NUR BEIM HINEINFAHREN, NICHT BEIM HINAUS.
-           Die Ausfahrtseite stand auf MAX + einer Bildschirmhoehe, also
-           142 bei einem Band von 92..123. Gemessen auf Hardware (05.08.):
-           die Suche allein kostet 7 VBlanks je 30 Frames - und der
-           Messlauf faehrt 123..170, das Band liegt also bereits HINTER
-           dem Spieler. Wir haben nach Loechern gesucht, die nicht mehr
-           sichtbar werden koennen.
-           Die Asymmetrie ist richtig, nicht nachlaessig: Loecher kommen
-           von UNTEN ins Bild. Beim Hineinfahren muss die Suche eine
-           Bildschirmhoehe frueher anlaufen, damit ein Loch am unteren
-           Rand schon bedient wird; beim Hinausfahren ist ein Loch in
-           Zeile R aber genau dann weg, wenn prow ueber R steht. */
+        /* !! THE MARGIN APPLIES ONLY ON THE WAY IN, NOT ON THE WAY OUT.
+           The exit side stood at MAX plus one screen height, so 142 for a
+           band at 92..123. Measured on hardware (05.08.): the search alone
+           costs 7 VBlanks per 30 frames - and the measuring run travels
+           123..170, so the band is already BEHIND the player. We were
+           searching for holes that can never become visible again. The
+           asymmetry is right, not sloppy: holes come into view from BELOW.
+           On the way in the search has to start one screen height earlier
+           so that a hole at the bottom edge is served in time; on the way
+           out a hole in row R is gone exactly once prow has passed R. */
         if (prow + (u16)LVL_SCREEN_ROWS < (u16)WALLWORM_ROW_MIN ||
             prow > (u16)WALLWORM_ROW_MAX) {
             for (w = 0u; w < (u8)WALLWORM_SLOTS; w++) wallworm_tick(w);
@@ -9380,19 +9363,17 @@ static void wallworms_update(void) {
         return;
     }
 #endif
-    /* ===== Unterblock 26: die LOCHSUCHE. Hardware 05.08.: Block 12
-       (Wandwurm-Update) kostet 10 bis 13 VBlanks je 30 Frames - der
-       groesste gemessene Einzelposten. Zwei Kandidaten stecken darin: die
-       Suche hier (wallworm_pick_exit -> 16 Loecher x 32 Ringzeilen = 512
-       Durchlaeufe) und die wallworm_tick()-Schleife darunter. Dieser Block
-       trennt beide.
-       Das Band liegt in den Zeilen 92..123, der Messlauf faehrt 123..170,
-       und die Abkuerzung oben greift erst ab Zeile 142 (MAX + eine
-       Bildschirmhoehe) - die Suche laeuft also ueber die ersten 40 % des
-       Laufs.
-       !! DER ZAEHLER WIRD TROTZDEM HERUNTERGEZAEHLT. Bliebe er stehen,
-       spawnte die Messfassung spaeter anders als die Referenz und wuerde
-       eine andere Szene messen - die Fehlerklasse von mess_5. ===== */
+    /* ===== Sub-block 26: the HOLE SEARCH. Hardware 05.08.: block 12 (wall
+       worm update) costs 10 to 13 VBlanks per 30 frames - the largest
+       single item measured. Two candidates sit inside it: the search here
+       (wallworm_pick_exit -> 16 holes x 32 ring rows = 512 passes) and the
+       wallworm_tick() loop below. This block separates the two. The band
+       lies in rows 92..123, the measuring run travels 123..170, and the
+       shortcut above only bites from row 142 (MAX plus one screen height)
+       - so the search runs over the first 40 % of the run. !! THE COUNTER
+       IS DECREMENTED ALL THE SAME. If it stayed put, the measuring build
+       would spawn differently later than the reference and would be
+       measuring a different scene - the error class of mess_5. ===== */
     if (g_wallworm_spawn_cd > 0u) {
         g_wallworm_spawn_cd--;
     } else if (PROF_OFF(26)) {
@@ -12586,16 +12567,15 @@ static void bar_redraw_flush(void) {
        there (the row    left behind is later overwritten by the
        streaming). Solution: restore one frame    later, when the table has
        long pointed at the new row and the old one is off    screen. */
-    /* ===== Zwei Unterbloecke, um die 13 VBlanks der Leiste aufzuteilen.
-       Hardware 05.08.: Block 8 kostet 13 VBlanks je 30 Frames (8,8 %) - fuer
-       einen Streifen, der sich selten aendert. Die Setzer von g_bar_redraw
-       sind alle ereignisgesteuert, gezeichnet wird also NICHT jeden Frame;
-       die Kosten muessen im Neuaufbau selbst oder im Terrain-Restore
-       stecken. Block 24 = Restore, Block 25 = Neuaufbau.
-       !! DIE FLAGGE WIRD TROTZDEM GELOESCHT. Bliebe sie stehen, sammelte
-       sich Arbeit an anderer Stelle an und die Messung zeigte etwas
-       anderes als den abgeschalteten Block - genau der Fehler, an dem
-       mess_5 unbrauchbar geworden ist (g_busy_bullets). ===== */
+    /* ===== Two sub-blocks to split up the bar's 13 VBlanks. Hardware
+       05.08.: block 8 costs 13 VBlanks per 30 frames (8.8 %) - for a strip
+       that rarely changes. The setters of g_bar_redraw are all event
+       driven, so it is NOT drawn every frame; the cost has to sit in the
+       rebuild itself or in the terrain restore. Block 24 = restore, block
+       25 = rebuild. !! THE FLAG IS CLEARED ALL THE SAME. If it stayed set,
+       work would pile up elsewhere and the measurement would show
+       something other than the disabled block - exactly the mistake that
+       made mess_5 useless (g_busy_bullets). ===== */
     if (g_bar_restore_pending != 0xFFu) {
         if (!PROF_OFF(24)) restore_terrain_row(g_bar_restore_pending);
         g_bar_restore_pending = 0xFFu;
@@ -12774,11 +12754,11 @@ static void score_draw(void) {
           digit[3] = 0u; }
 #endif
 #if PROFILE_MODE || FPS_VBC_DISPLAY
-        /* !! DIESER BLOCK SCHREIBT DIE ZIFFERN 2..0 NOCH EINMAL und wuerde
-           den Profilerwert ueberschreiben - dieselbe Falle wie bei
-           OAM_IN_SCORE am 31.07., wo die ROM hartnaeckig 090 zeigte.
-           Deshalb steht der Profiler nicht hier oben, sondern hier drunter
-           ausgesperrt. */
+        /* !! THIS BLOCK WRITES DIGITS 2..0 A SECOND TIME and would
+           overwrite the profiler value - the same trap as with
+           OAM_IN_SCORE on 31.07., where the ROM stubbornly showed 090.
+           That is why the profiler does not sit up here but is locked out
+           below it. */
         if (!g_score_view
 #if HW_PROF
             && !g_prof_fertig
@@ -12790,26 +12770,23 @@ static void score_draw(void) {
           digit[0] = (u8)(vs % 10u); }
 #endif
 #if HW_PROF
-        /* !! BEWUSST OHNE `if (!g_score_view)`, UND ALS LETZTES.
-           Zwei Gruende, beide schon einmal Zeit gekostet:
-           1. Wer VOR den anderen Bloecken schreibt, dessen Ziffern werden
-              ueberschrieben - so zeigte die OAM-Diagnose am 31.07.
-              hartnaeckig 090.
-           2. Die Anzeige an die Ansicht zu haengen ist die Falle, die
-              CLAUDE.md fuer den Benchmark beschreibt ("die Ansicht MUSS
-              die Benchmark-Ansicht sein"). Fuer eine reine Mess-ROM ist
-              das unnoetig gefaehrlich: die Zahlen sollen dastehen, egal
-              was OPTION zuletzt gemacht hat. Die Unverwundbarkeit haengt
-              ohnehin nicht daran, solange das Fenster offen ist -
-              god_active() prueft g_hwb_zustand ZUERST.
-
-           LINKE zwei Ziffern = Slot, RECHTE drei = Wert, LINKS/RECHTS
-           blaettert. Der Wert sind RASTERZEILEN JE FRAME: HW_PROF_FRAMES
-           ist 64, also ein Schieben um 6 statt einer Division. Ein Frame
-           hat 199 Zeilen; bei 122 VBlanks je 30 Frames sind das rund 800
-           Zeilen je Spielframe - ein Slot mit 080 ist also rund ein
-           Zehntel. Slot 14 = VBlanks je Frame mal 10 (der Nenner, aus
-           DERSELBEN Strecke), Slot 15 = Preis eines Messpaares. */
+        /* !! DELIBERATELY WITHOUT `if (!g_score_view)`, AND LAST. Two
+           reasons, both of which have cost time before: 1. Whoever writes
+           BEFORE the other blocks has their digits overwritten - that is
+           how the OAM diagnostic stubbornly showed 090 on 31.07. 2. Tying
+           the display to the view is the trap CLAUDE.md describes for the
+           benchmark ("the view MUST be the benchmark view"). For a pure
+           measuring ROM that is needlessly dangerous: the numbers should
+           stand there whatever OPTION did last. The invulnerability does
+           not hang on it anyway as long as the window is open -
+           god_active() checks g_hwb_zustand FIRST. LEFT two digits = slot,
+           RIGHT three = value, LEFT/RIGHT pages. The value is RASTER LINES
+           PER FRAME: HW_PROF_FRAMES is 64, so a shift by 6 instead of a
+           division. A frame has 199 lines; at 122 VBlanks per 30 frames
+           that is about 800 lines per game frame - a slot showing 080 is
+           therefore about a tenth. Slot 14 = VBlanks per frame times 10
+           (the denominator, from THE SAME stretch), slot 15 = price of one
+           measuring pair. */
         if (g_prof_fertig) {
             u16 pv;
             if (g_prof_sicht == 14u) {
@@ -12842,12 +12819,12 @@ static void score_draw(void) {
     if (!g_score_view)
         while (top > 0u && digit[top] == 0u) top--;
 #if HW_PROF
-    /* !! KEINE NULLENUNTERDRUECKUNG, SOBALD DER PROFILER ANZEIGT.
-       Sie hat auf Hardware genau das angerichtet, wogegen sie gedacht ist:
-       Slot 0 mit Wert 34 stand als blosses "34" da - die beiden linken
-       Ziffern, also die SLOT-NUMMER, waren weggeputzt, und die Zahl war
-       nicht mehr zuzuordnen. Hier sind fuehrende Nullen Information:
-       das Format ist SS00WWW, Slot links, Wert rechts. */
+    /* !! NO LEADING-ZERO SUPPRESSION ONCE THE PROFILER IS ON DISPLAY. On
+       hardware it did exactly what it is meant to prevent: slot 0 with
+       value 34 stood there as a bare "34" - the two left digits, that is
+       the SLOT NUMBER, had been wiped away, and the number could no longer
+       be attributed. Here leading zeros are information: the format is
+       SS00WWW, slot on the left, value on the right. */
     if (g_prof_fertig) top = 6u;
 #endif
 
@@ -13197,7 +13174,7 @@ static void game_start(void) {
             g_spawn_left[sp]  = 0u;
             g_spawn_timer[sp] = 0u;
         }
-        g_spawn_lo = SPAWN_FENSTER_LEER;   /* ausdruecklich, siehe g_spawn_lo */
+        g_spawn_lo = SPAWN_FENSTER_LEER;   /* explicitly, see g_spawn_lo */
         g_spawn_hi = 0u;
     }
     g_spawn_scroll_row    = 0u;   /* level start = trigger row 0 */
@@ -14200,18 +14177,17 @@ static void level_loop_restart(void) {
        terrain and lead-in from the section valid at that point. */
     spr_sec_select(0u);
     spr_tiles_upload();
-    /* !! DIE LEISTENKACHELN GEHOEREN HIER GENAUSO DAZU WIE DIE SPRITES.
-       Dieser Weg kommt DIREKT AUS DEM SHOP, und der ueberschreibt die
-       GESAMTE Character-RAM - die Balkenkacheln inklusive. Die Zeile
-       darueber holt die Sprites zurueck, die Leiste blieb liegen: in den
-       Balkenzellen stand danach, was zufaellig auf ihren VRAM-Plaetzen lag,
-       im Bild als "11111" (Nutzerbefund 05.08., aus den Screenshots des
-       Laufs Boss -> Shop -> Levelneustart).
-       Nicht zu verwechseln mit dem Palettenfehler vom 04.08.: der betraf
-       die FARBEN (INTRO_PAL_BASE 4 -> 5), hier sind es die KACHELN. Beide
-       zeigen "11111", und der erste Fix konnte den zweiten deshalb nicht
-       beheben. shop_resume() macht es an seiner Stelle laengst richtig -
-       nur laeuft es auf diesem Weg nicht. */
+    /* !! THE BAR TILES BELONG HERE JUST AS MUCH AS THE SPRITES. This path
+       comes STRAIGHT OUT OF THE SHOP, and the shop overwrites the ENTIRE
+       character RAM - the bar tiles included. The line above fetches the
+       sprites back, the bar was left lying: whatever happened to occupy
+       their VRAM places then stood in the bar cells, showing as "11111"
+       (user report 05.08., from the screenshots of the run boss -> shop ->
+       level restart). Not to be confused with the palette bug of 04.08.:
+       that one was about the COLOURS (INTRO_PAL_BASE 4 -> 5), here it is
+       the TILES. Both show "11111", which is why the first fix could not
+       cure the second. shop_resume() has long been doing it right in its
+       place - it just does not run on this path. */
     build_bar_assets();
 
     game_start();
@@ -14228,21 +14204,20 @@ static void level_loop_restart(void) {
     g_score       = keep_score;
     g_score_shown = keep_score;
     g_cash        = keep_cash;
-    /* !! DURCH bar_set_energy(), NICHT AN IHR VORBEI. Hier standen die
-       ALTEN FESTEN DESIGNNUMMERN 9 (voll) und 2 (leer) aus dem
-       handgemachten Kachelsatz - dieselben, die am 04.08. ueberall sonst
-       durch BAR_ENERGY_FULL/EMPTY ersetzt wurden, nur an dieser einen
-       Stelle nicht. Im Kachelsatz aus dem Tool ist 9 die ZIFFER 1, und
-       genau deshalb stand nach dem Weg Boss -> Shop -> Levelneustart
-       "11111" im Energiebalken (Nutzerbefund 05.08., aus den Screenshots).
-       Gemessen: die Spalten standen vor dem Boss auf 4,4,4,4,4 und danach
-       auf 9,9,9,9,9.
-       Der Palettenfehler vom 04.08. (INTRO_PAL_BASE 4 -> 5) sah GENAUSO
-       aus und war ein anderer - dort waren es die Farben, hier die
-       Kachelnummern. Ein zweiter Fehler mit demselben Bild.
-       Die Kopie der Formel war ohnehin ueberfluessig: bar_set_energy()
-       rechnet dasselbe, nur mit den Zahlen aus den Tool-Daten, und wer sie
-       aufruft kann die Nummern gar nicht erst falsch abschreiben. */
+    /* !! THROUGH bar_set_energy(), NOT AROUND IT. What stood here were the
+       OLD FIXED DESIGN NUMBERS 9 (full) and 2 (empty) from the hand-made
+       tile set - the same ones that were replaced by BAR_ENERGY_FULL/EMPTY
+       everywhere else on 04.08., only not in this one place. In the tile
+       set from the tool 9 is the DIGIT 1, and that is exactly why "11111"
+       stood in the energy bar after the path boss -> shop -> level restart
+       (user report 05.08., from the screenshots). Measured: the columns
+       stood at 4,4,4,4,4 before the boss and at 9,9,9,9,9 afterwards. The
+       palette bug of 04.08. (INTRO_PAL_BASE 4 -> 5) looked EXACTLY THE
+       SAME and was a different one - there it was the colours, here the
+       tile numbers. A second bug with the same picture. The copy of the
+       formula was superfluous anyway: bar_set_energy() computes the same
+       thing, only with the numbers from the tool data, and whoever calls
+       it cannot copy those numbers down wrongly in the first place. */
     (void)c;
     bar_set_energy();
     bar_draw_at(g_bar_vrow);
@@ -14276,7 +14251,7 @@ static void shop_resume(void) {
        every run. */
     hwb_open();
 #if HW_PROF
-    prof_reset();   /* jeder Zaehler ausdruecklich - siehe prof_reset */
+    prof_reset();   /* every counter explicitly - see prof_reset */
 #endif
     vbc_stats_reset();
 #endif
@@ -16094,7 +16069,7 @@ void main(void) {
         PROF_B(18);   /* Slot 18: Wiedereinstieg, Zustandsmaschine, Frameende */
         PROF_A();
         while ((u8)(VBCounter - frame_ref) < g_fps_div) ;
-        PROF_B(13);   /* Slot 13: DAS WARTEN AUF DEN FRAMEDECKEL */
+        PROF_B(13);   /* slot 13: THE WAIT FOR THE FRAME CAP */
 #endif
         /* Safety flush for EVERY state. The in-play flush sits inside the
            STATE_PLAY branch, so g_neg_want kept its last value when the
@@ -16140,7 +16115,7 @@ void main(void) {
             g_snd_acc = (u8)(g_snd_acc - 2u);
             Sounds_Update();
         }
-        PROF_B(16);   /* Slot 16: Eingabe und Musiktreiber */
+        PROF_B(16);   /* slot 16: input and music driver */
 #if BENCH_FIRE
         g_pad |= J_A;      /* continuous fire for the benchmark scene (see BENCH_FIRE) */
 #endif
@@ -16246,15 +16221,14 @@ void main(void) {
                hwb_close() only takes the first one, so it costs a compare
                after that. */
 #if HW_PROF
-            /* !! IN DER PROFILER-ROM SCHLIESST DAS FENSTER NIE.
-               Es ist der Lebensversicherung des Ablesens: an
-               g_hwb_zustand haengt die Unverwundbarkeit (god_active). Mit
-               geschlossenem Fenster stirbt das Schiff, das Spiel startet
-               neu, game_start() ruft prof_reset() - und die sechzehn
-               Zahlen, die der Nutzer gerade abschreibt, sind weg. Die
-               Profilmessung selbst ist nach 64 Frames ohnehin fertig; der
-               VBlank-Mittelwert, den hwb_close() sonst festhaelt, steht
-               als Slot 14 in der Tabelle. */
+            /* !! IN THE PROFILER ROM THE WINDOW NEVER CLOSES. It is the
+               life insurance of the read-out: the invulnerability hangs on
+               g_hwb_zustand (god_active). With the window closed the ship
+               dies, the game restarts, game_start() calls prof_reset() -
+               and the sixteen numbers the user is in the middle of copying
+               down are gone. The profile measurement itself is finished
+               after 64 frames anyway; the VBlank average that hwb_close()
+               otherwise records stands in the table as slot 14. */
             if (!g_prof_fertig)
 #endif
             { u16 brow = (u16)(g_scroll_y >> 3);
@@ -16262,23 +16236,21 @@ void main(void) {
               else if (g_hwb_n >= (u16)HW_BENCH_MAX_WIN) hwb_close(); }
 #endif
 #if HW_PROF
-            /* !! HIER WIRD DIE ECHTE TASTATUR GELESEN, NICHT g_pad.
-               Waehrend des Messfensters ist g_pad VORGEGEBEN (siehe
-               input_update) - das ist der Sinn des Benchmarks, aber es
-               heisst auch, dass die Tasten des Nutzers dort NICHT
-               ankommen. Die erste Fassung haengte das Blaettern an
-               g_pad_pressed und zusaetzlich an "Fenster geschlossen":
-               auf Hardware stand damit Slot 0 auf dem Schirm und nichts
-               ging mehr - der Nutzer sass drei Minuten vor einer
-               einzigen Zahl. Der Rohwert aus JOYPAD laeuft am Skript
-               vorbei, mit eigener Flankenerkennung.
-               Das Fenster bleibt dabei OFFEN und muss es auch: daran
-               haengt die Unverwundbarkeit (god_active prueft
-               g_hwb_zustand). Geschlossen wuerde das Schiff sterben, das
-               Spiel neu starten - und prof_reset() die Zahlen loeschen,
-               die gerade abgelesen werden. Das Blaettern stoert die
-               laufende Messung nicht: sie ist nach 64 Frames fertig, und
-               die Tasten wirken ohnehin nicht aufs Spiel. */
+            /* !! THE REAL KEYPAD IS READ HERE, NOT g_pad. During the
+               measuring window g_pad is SCRIPTED (see input_update) - that
+               is the point of the benchmark, but it also means the user's
+               key presses do NOT arrive there. The first version hung the
+               paging on g_pad_pressed and additionally on "window closed":
+               on hardware slot 0 stood on the screen and nothing moved any
+               more - the user sat in front of a single number for three
+               minutes. The raw value from JOYPAD goes past the script,
+               with its own edge detection. The window stays OPEN in the
+               process, and it has to: the invulnerability hangs on it
+               (god_active checks g_hwb_zustand). Closed, the ship would
+               die, the game would restart - and prof_reset() would erase
+               the very numbers being read off. The paging does not disturb
+               the running measurement: it is finished after 64 frames, and
+               the keys have no effect on the game anyway. */
             if (g_prof_fertig) {
                 u8 roh    = JOYPAD;
                 u8 flanke = (u8)(roh & (u8)~g_prof_pad_alt);
@@ -16326,14 +16298,14 @@ void main(void) {
             PROF_A();
             boss_update();   /* boss, from row BOSS_ROW */
             if (!PROF_OFF(10)) metaenemies_update();
-            PROF_B(3);       /* Slot 3: Boss und Metasprite-Gegner */
+            PROF_B(3);       /* slot 3: boss and metasprite enemies */
             PROF_A();
             if (!PROF_OFF(11)) worms_update();
             PROF_B(4);       /* Slot 4: Wuermer */
             PROF_A();
             if (!PROF_OFF(12)) wallworms_update();  /* wall worms */
             wcrawls_update();   /* wall crawlers ("slime") */
-            PROF_B(5);       /* Slot 5: Wandwuermer und Wandkriecher */
+            PROF_B(5);       /* slot 5: wall worms and wall creepers */
             }
             PROF_A();
             if (!PROF_OFF(5))
@@ -16437,12 +16409,13 @@ void main(void) {
             PROF_A();
             terr_sec_step();      /* stream the terrain section in steps, same timing */
             spr_sec_step();       /* sprite section, same timing */
-            PROF_B(12);      /* Slot 12: abschnittsweises Nachladen von Terrain und Sprites */
-            /* Slot 15 ist der LEERLAUF: was ein Messpaar selbst kostet.
-               Von jedem anderen Slot abzuziehen - siehe HW_PROF. */
+            PROF_B(12);      /* slot 12: section-wise reloading of terrain and sprites */
+            /* slot 15 is the IDLE one: what a measuring pair costs by
+               itself. To be subtracted from every other slot - see
+               HW_PROF. */
             PROF_A();
             PROF_B(15);
-            PROF_A();   /* Slot 18 laeuft bis zum Framedeckel, siehe unten */
+            PROF_A();   /* slot 18 runs up to the frame cap, see below */
             /* Re-entry. "GET READY PLAYER 1" over the starfield first and
                until fire, as in the original after EVERY death
                (death-respawn.md). It runs BEFORE respawn_do(), so the
@@ -16471,11 +16444,11 @@ void main(void) {
 #endif
             /* Block 8 omits the bar, but the digits have to stay -
                otherwise the measurement cannot be read. */
-            /* !! ZWEITE EBENE, WEIL DIESES PAAR IN SLOT 18 LIEGT.
-               Auf der ersten Ebene wuerde das PROF_A hier den Startpunkt
-               von Slot 18 ueberschreiben, und Slot 18 maesse nur noch die
-               Zeit ab score_draw - genau die Verwechslung, gegen die
-               g_prof_t0_2 da ist. */
+            /* !! A SECOND LEVEL, BECAUSE THIS PAIR LIES INSIDE SLOT 18. On
+               the first level the PROF_A here would overwrite slot 18's
+               start point, and slot 18 would only measure the time from
+               score_draw onwards - exactly the mix-up g_prof_t0_2 is there
+               to prevent. */
             PROF_A2();
             score_draw();
             PROF_B2(17);   /* Slot 17: Punktestand zeichnen */
