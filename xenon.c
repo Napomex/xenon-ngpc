@@ -2254,6 +2254,40 @@ static u16     g_spawn_scroll_row;
 /* Number of waves with members still outstanding. Saves the 113-entry loop
    in enemies_update while nothing is pending, which is the normal case. */
 static u8      g_spawn_pending;
+/* !! HIER, NICHT BEIM PROFILER. Erst stand dieser Block hinter
+   hwb_close() - also INNERHALB von `#if HW_BENCH`. Mit HW_BENCH 0
+   fehlten die Zaehler, waehrend die Gegenprobe unten sie weiter
+   benutzte: der Bau brach ab, und ohne den Selbsttest von
+   bench_bauen.py ("xenon.ngp ist unveraendert") waere die ALTE ROM
+   gemessen worden. Genau die Falle, gegen die dieser Test dort steht. */
+/* Gegenprobe zum Wellenfenster, siehe g_spawn_lo. 1 = mitpruefen. */
+#define PROBE_SPAWNFENSTER 0
+#if PROBE_SPAWNFENSTER
+u16 g_probe_fenster_diff;   /* verlorene Wellen - MUSS 0 bleiben */
+u16 g_probe_fenster_seen;   /* offene Wellen insgesamt gesehen */
+u16 g_probe_fenster_iter;   /* Schleifendurchlaeufe, geteilt durch 64 */
+u16 g_probe_fenster_frames; /* Frames, in denen die Schleife ueberhaupt lief */
+u16 g_probe_iter_acc;
+#endif
+/* ===== DAS FENSTER DER OFFENEN WELLEN =====
+   Die Spawn-Schleife lief ueber ALLE 113 Wellen, sobald auch nur EINE
+   offen war - und offen ist fast immer eine. Mit dem ROM-Profiler gemessen
+   (Slot 20): der groesste Einzelposten in enemies_update, deutlich vor der
+   Bewegung der Gegner und VIERZIGMAL so teuer wie der Trigger-Scan, den
+   der Kommentar dort fuer den Uebeltaeter hielt.
+   Wellen feuern in Zeilenreihenfolge, die offenen liegen also dicht
+   beieinander. Zwei Byte merken sich den ersten und letzten offenen Index;
+   gescannt wird nur noch dieser Bereich.
+   !! DAS FENSTER IST EINE OBERMENGE, NIE EINE AUSWAHL. Es wird beim Feuern
+   aufgeweitet und bei jedem Durchlauf aus dem tatsaechlichen Bestand neu
+   berechnet - eine Welle kann einen Frame laenger drinstehen als noetig
+   (harmlos), aber keine kann herausfallen. Genau das prueft
+   PROBE_SPAWNFENSTER nach.
+   Ohne Initialisierer und in spawn_state_reset() ausdruecklich gesetzt:
+   ein static traegt auf HARDWARE Muell (CLAUDE.md 6.1). */
+static u8      g_spawn_lo;           /* erster offener Index, 0xFF = keiner */
+static u8      g_spawn_hi;           /* letzter offener Index */
+#define SPAWN_FENSTER_LEER 0xFFu
 /* The spawn trigger check (a ROM access to lvl_spawn_row per unfired
    spawn) used to run EVERY frame across all 140 spawns - but a spawn can
    only become due when g_spawn_scroll_row changes, about every 48 frames.
@@ -5096,14 +5130,105 @@ static u8 terrain_solid(u8 x, u8 y) {
 static const u8 ship_hit_y[4] = { 2u, 6u, 10u, 14u };
 static const u8 ship_hit_x[3] = { 5u, 8u, 10u };
 
-static u8 ship_hits_terrain(u8 x, u8 y) {
+/* ===== PROBE_SHIPCELLS - THE OLD PROBE, KEPT ONLY TO BE COMPARED AGAINST
+   THE NEW ONE, IN THE GAME, ON THE REAL MAP =====
+   The cell arithmetic itself is proved exhaustively off the machine
+   (tools/check_ship_probe.py, all 65536 combinations of x and
+   y + g_scr1_y). What that cannot reach is the DATA: g_row_map,
+   g_mapobj_grid, lvl_map, the HUD row - the new version reads them in a
+   different order and hoists the row-dependent part out of the column
+   loop. A lock-step RAM comparison of two builds does not settle it
+   either, because the new build is FASTER: one game frame more inside the
+   same hardware frame shows up as g_scroll_y differing by one, which looks
+   exactly like a terrain probe that answered differently.
+   So both versions run side by side here and are compared directly. Set to
+   1, build, run - g_probe_ship_diff must stay at 0. Off for release. */
+#define PROBE_SHIPCELLS 0
+#if PROBE_SHIPCELLS
+/* NOT static, on purpose: a static does not appear in xenon.map, and the
+   probe outside has to find the two counters by name. */
+u16 g_probe_ship_diff;   /* mismatches found - MUST stay 0 */
+u16 g_probe_ship_seen;   /* positions compared, so a silent zero is visible */
+static u8 ship_hits_terrain_alt(u8 x, u8 y) {
     u8 i, j, yj;
     for (j = 0u; j < 4u; j++) {
-		yj = (u8)(y + ship_hit_y[j]);
+        yj = (u8)(y + ship_hit_y[j]);
         for (i = 0u; i < 3u; i++)
             if (terrain_solid((u8)(x + ship_hit_x[i]), yj))
                 return 1u;
-	}
+    }
+    return 0u;
+}
+static u8 ship_hits_mapobj_alt(u8 x, u8 y) {
+    u8 i, j, obj, yj;
+    for (j = 0u; j < 4u; j++) {
+        yj = (u8)(y + ship_hit_y[j]);
+        for (i = 0u; i < 3u; i++) {
+            obj = mapobj_hit_test((u8)(x + ship_hit_x[i]), yj);
+            if (obj != MAPOBJ_NONE) return obj;
+        }
+    }
+    return MAPOBJ_NONE;
+}
+#endif
+
+/* ===== TWELVE PROBE POINTS, AT MOST SIX CELLS =====
+   The point grid is 3 x 4 points, but the points are DENSER THAN A TILE:
+   the x offsets 5/8/10 span 5 px and the y offsets 2..14 span 12 px, so
+   the twelve points fall into at most 2 tile columns and at most 3 ring
+   rows - between four and six distinct cells. The other six to eight
+   lookups asked the same cell over again, each time through a far call
+   that recomputed the shift, the HUD row test and (in terrain_solid) the
+   row-to-map-row translation with its 16-bit multiply.
+   This resolves the distinct rows and columns once and then walks the
+   cells. Same cells, same order, same answer.
+
+   ADJACENT DEDUPLICATION IS EXACT HERE, and only because of the spacing:
+   consecutive offsets differ by 4 px, so two neighbouring probes land on
+   the same tile or on the next one - never two apart, and never back on an
+   earlier one. Widen the offsets and this argument fails; the sequence
+   would have to be deduplicated properly. The ring wrap (u8 arithmetic,
+   32 rows) does not break it: the rows still only ever step by one.
+   x needs no wrap thought at all - x + 10 stays below 256. */
+static void ship_probe_cells(u8 x, u8 y, u8 *rows, u8 *cols, u8 *nr, u8 *nc) {
+    u8 k, v, n;
+    u8 base = (u8)(y + g_scr1_y);   /* u8 wrap intended, as in terrain_solid */
+    n = 0u;
+    for (k = 0u; k < 4u; k++) {
+        v = (u8)((u8)(base + ship_hit_y[k]) >> 3);
+        if (n == 0u || rows[n - 1u] != v) rows[n++] = v;
+    }
+    *nr = n;
+    n = 0u;
+    for (k = 0u; k < 3u; k++) {
+        v = (u8)((u8)(x + ship_hit_x[k]) >> 3);
+        if (n == 0u || cols[n - 1u] != v) cols[n++] = v;
+    }
+    *nc = n;
+}
+
+/* Body copied from terrain_solid(), with everything that depends only on
+   the ROW hoisted out of the column loop: the HUD row test, g_row_map and
+   the map_row * LVL_MAP_W multiply used to run once per POINT. */
+static u8 ship_hits_terrain(u8 x, u8 y) {
+    u8 rows[4], cols[3], nr, nc, i, j, r, c;
+    u16 map_row, base, n;
+    ship_probe_cells(x, y, rows, cols, &nr, &nc);
+    for (j = 0u; j < nr; j++) {
+        r = rows[j];
+        if (r == g_bar_vrow) continue;      /* HUD row: terrain there is hidden */
+        map_row = g_row_map[r];
+        if (map_row >= (u16)LVL_MAP_H) continue;
+        base = (u16)((u16)map_row * (u16)LVL_MAP_W);
+        for (i = 0u; i < nc; i++) {
+            c = cols[i];
+            if (c >= (u8)LVL_MAP_W) continue;
+            if (g_mapobj_grid[r][c] & MAPOBJ_WILT_BIT) continue;
+            n = lvl_map[base + (u16)c] & 0x01FFu;
+            if (n == 0u) continue;
+            if (lvl_tile_solid[n - 1u]) return 1u;
+        }
+    }
     return 0u;
 }
 
@@ -5132,18 +5257,43 @@ static u8 mapobj_hit_test(u8 x, u8 y) {
     return g ? (u8)(g - 1u) : MAPOBJ_NONE;
 }
 
-/* Ship point grid (as in ship_hits_terrain) against map objects. */
+/* Ship point grid (as in ship_hits_terrain) against map objects. Same
+   twelve-points-into-six-cells argument, see ship_probe_cells.
+   THE ORDER IS PRESERVED, and that matters here where it does not in
+   ship_hits_terrain: this one returns WHICH object was touched, not just
+   whether. Rows ascend and columns ascend exactly as the old j/i loops
+   did, so with the ship on two objects at once the same one still wins. */
 static u8 ship_hits_mapobj(u8 x, u8 y) {
-    u8 i, j, obj, yj;
-    for (j = 0u; j < 4u; j++) {
-		yj = (u8)(y + ship_hit_y[j]);
-        for (i = 0u; i < 3u; i++) {
-            obj = mapobj_hit_test((u8)(x + ship_hit_x[i]), yj);
-            if (obj != MAPOBJ_NONE) return obj;
+    u8 rows[4], cols[3], nr, nc, i, j, r, c, g;
+    ship_probe_cells(x, y, rows, cols, &nr, &nc);
+    for (j = 0u; j < nr; j++) {
+        r = rows[j];
+        if (r == g_bar_vrow) continue;
+        for (i = 0u; i < nc; i++) {
+            c = cols[i];
+            if (c >= (u8)LVL_MAP_W) continue;
+            g = (u8)(g_mapobj_grid[r][c] & (u8)~MAPOBJ_WILT_BIT);
+            if (g) return (u8)(g - 1u);
         }
-	}
+    }
     return MAPOBJ_NONE;
 }
+
+#if PROBE_SHIPCELLS
+/* One y band per frame across the whole width, so the sweep walks the
+   playfield while the map scrolls underneath - every position gets asked
+   against constantly changing data rather than one frozen picture. */
+static void probe_shipcells_tick(void) {
+    static u8 band;
+    u8 x, y = (u8)(band << 2);
+    band = (u8)((band + 1u) & 31u);   /* y = 0,4,...,124 */
+    for (x = 0u; x < (u8)SCR_W; x++) {
+        if (ship_hits_terrain(x, y) != ship_hits_terrain_alt(x, y)) g_probe_ship_diff++;
+        if (ship_hits_mapobj(x, y)  != ship_hits_mapobj_alt(x, y))  g_probe_ship_diff++;
+        g_probe_ship_seen++;
+    }
+}
+#endif
 
 /* Make an object wilt: once only. Permanently disables collision and
    damage and immediately redraws every currently visible cell; invisible
@@ -6883,6 +7033,145 @@ static void hwb_close(void) {
     g_hwb_zustand = 2u;
     g_hwb_erg = (u16)(g_hwb_n ? (u16)(g_hwb_sum / g_hwb_n) : 0u);
 }
+
+/* ===== HW_PROF - DER PROFILER IM ROM, EINE MESSUNG STATT ZEHN ROMS =====
+   Bis heute wurde jeder Block dadurch vermessen, dass man ihn ABSCHALTET und
+   die Differenz nimmt. Am 05.08. ist diese Methode fuer die Kollisionen
+   nachweislich durchgefallen: Block 4 aus ergab -0,3 %, Unterblock 27 aus
+   sogar +1,3 %. Wer einen Treffer verhindert, laesst das Ziel leben, und es zu
+   zeichnen kostet mehr als der Test. **Die Szene aendert sich, also misst man
+   etwas anderes.**
+
+   Hier wird nichts abgeschaltet. Es wird die ZEIT GELESEN, vor und nach jedem
+   Abschnitt, im normal laufenden Spiel. Ein Lauf, alle Abschnitte, Szene
+   unveraendert - die Fehlerklasse existiert nicht mehr.
+
+   DIE UHR: RAS_Y (0x8009) zaehlt die Rasterzeile 0..198, also 199 Zeilen je
+   Frame zu je rund 515 Zyklen - dreissigmal feiner als das VBlank-Raster, mit
+   dem bisher gemessen wurde. RAS_Y allein laeuft aber alle 199 Zeilen ueber,
+   und ein grosser Block dauert laenger als das (Zeichnen lag bei 43 von 146
+   VBlanks, das sind ueber 200 Zeilen) - er wuerde stillschweigend zu klein
+   gemessen. Deshalb VBCounter dazu:
+
+       t = VBCounter * 199 + ((RAS_Y >= 152) ? RAS_Y - 152 : RAS_Y + 47)
+
+   !! DIE 152 IST GEMESSEN, NICHT GERATEN: VBCounter zaehlt genau dann hoch,
+   wenn RAS_Y 152 erreicht (im Emulator ueber 38 Uebergaenge geprueft, ein
+   einziger Wert, keine Streuung). Damit ist t monoton, und Differenzen
+   stimmen bis 65535 Zeilen statt bis 199.
+
+   VBCounter ist u8 und laeuft alle 256 Frames um; t springt dort zurueck.
+   Solche Differenzen sind unsinnig gross und werden verworfen statt
+   mitgezaehlt - rund einmal je 256 Frames, gezaehlt in g_prof_verworfen.
+
+   !! DIE MESSUNG KOSTET SELBST ETWAS, DESHALB MISST SIE SICH SELBST.
+   Slot 15 ist ein LEERER Abschnitt: PROF_A direkt gefolgt von PROF_B. Was
+   dort steht, ist der Preis EINES Messpaares und gehoert von jedem anderen
+   Slot abgezogen. Ohne diesen Slot waere jeder Wert um den Messaufwand zu
+   gross, und die kleinen Abschnitte waeren es prozentual am staerksten. */
+#define HW_PROF 0
+#define HW_PROF_SLOTS  24u
+/* 64, damit "Zeilen je Frame" ein SCHIEBEN ist (>>6) und keine Division:
+   16-Bit-Division gibt es, aber sie im Anzeigepfad zu haben ist unnoetig.
+   64 Frames sind bei rund 800 Zeilen je Frame 51200 Zeilen - ein Abschnitt
+   mit 50 % Anteil landet bei 25600 und passt noch in u16. */
+#define HW_PROF_FRAMES 64u
+#if HW_PROF
+/* NICHT static: eine Sonde von aussen muss sie ueber xenon.map finden.
+   Auf HARDWARE liest der Nutzer die Zahlen vom Bildschirm ab, im Emulator
+   die Probe aus dem RAM - beide Wege muessen dasselbe zeigen, sonst misst
+   der Profiler das eine und zeigt das andere. */
+u16 g_prof_acc[HW_PROF_SLOTS];
+u16 g_prof_vbl;               /* VBlanks der Messstrecke - der Nenner fuer die Anteile */
+u8  g_prof_fertig;
+u8  g_prof_verworfen;         /* verworfene Differenzen (VBCounter-Umlauf) */
+static u16 g_prof_t0;
+/* !! ZWEITE EBENE, WEIL MESSPAARE SICH SONST GEGENSEITIG ZERSTOEREN.
+   Slot 2 umschliesst enemies_update(), die Slots 19..22 liegen DARIN.
+   Mit einem gemeinsamen g_prof_t0 wuerde das innere PROF_A den
+   Startpunkt des aeusseren ueberschreiben, und der aeussere Slot
+   bekaeme den Wert des letzten inneren Abschnitts - eine Zahl, die
+   plausibel aussieht und nichts bedeutet. Darum eine eigene Variable
+   je Schachtelungstiefe. Tiefer als zwei wird hier nicht gemessen. */
+static u16 g_prof_t0_2;
+static u16 g_prof_fr;
+static u8  g_prof_sicht;      /* angezeigter Slot, LINKS/RECHTS */
+static u8  g_prof_pad_alt;    /* eigene Flankenerkennung auf dem ROHEN JOYPAD, siehe Blaettern */
+/* !! EIN EINZIGES TOR FUER BEIDES - Abschnitte UND Nenner.
+   Die erste Fassung liess die Slots immer mitzaehlen und nur g_prof_vbl im
+   Fenster - Zaehler und Nenner kamen also aus verschiedenen Strecken, und
+   die Anteile waren frei erfunden (im Emulator sofort sichtbar: Slots
+   voll, Nenner 0). Jetzt entscheidet g_prof_an ueber beides, und es wird
+   an genau EINER Stelle gesetzt, am Framerand. */
+static u8  g_prof_an;
+
+static u16 prof_uhr(void) {
+    u8  l = RAS_Y;
+    u8  v = VBCounter;
+    u16 t;
+    /* auf den VBlank-Punkt normieren, siehe oben: 199 - 152 = 47 */
+    if (l >= 152u) l = (u8)(l - 152u);
+    else           l = (u8)(l + 47u);
+    t = (u16)v;
+    t = (u16)(t * 199u);
+    t = (u16)(t + (u16)l);
+    return t;
+}
+static void prof_a(void)  { if (g_prof_an) g_prof_t0   = prof_uhr(); }
+static void prof_a2(void) { if (g_prof_an) g_prof_t0_2 = prof_uhr(); }
+static void prof_zu(u8 n, u16 t0) {
+    u16 jetzt, d, a;
+    jetzt = prof_uhr();
+    d = (u16)(jetzt - t0);
+    if (d > 2000u) { g_prof_verworfen++; return; }   /* VBCounter-Umlauf, siehe oben */
+    /* getrennte Anweisungen, kein Index in einer zusammengesetzten Rechnung
+       - die cc900-Regel aus dem VBC-Ringpuffer weiter oben. */
+    a = g_prof_acc[n];
+    if (a < 60000u) { a = (u16)(a + d); g_prof_acc[n] = a; }
+}
+static void prof_b(u8 n)  { if (g_prof_an) prof_zu(n, g_prof_t0); }
+static void prof_b2(u8 n) { if (g_prof_an) prof_zu(n, g_prof_t0_2); }
+static void prof_reset(void) {
+    u8 k;
+    /* Jeder Zaehler ausdruecklich gesetzt - ein static ohne Initialisierer
+       traegt auf HARDWARE Muell, und der Emulator kann das nicht zeigen
+       (CLAUDE.md 6.1). Genau diese Klasse hat den Benchmark schon einmal
+       stumm uebersprungen. */
+    for (k = 0u; k < (u8)HW_PROF_SLOTS; k++) g_prof_acc[k] = 0u;
+    g_prof_t0 = 0u; g_prof_t0_2 = 0u; g_prof_fr = 0u; g_prof_vbl = 0u;
+    g_prof_fertig = 0u; g_prof_sicht = 0u; g_prof_verworfen = 0u;
+    g_prof_an = 0u; g_prof_pad_alt = 0u;
+}
+/* Ein Spielframe ist vorbei. Nur waehrend des offenen Benchmark-Fensters,
+   damit die Messstrecke dieselbe ist wie beim VBlank-Wert daneben. */
+static void prof_frame_ende(u8 vbl) {
+    /* fps_tick meldet die VBlanks des GERADE BEENDETEN Frames. Gezaehlt
+       wird es genau dann, wenn dessen Abschnitte auch gemessen wurden -
+       darum zuerst das alte g_prof_an auswerten und erst danach das neue
+       setzen. Sonst haengen Zaehler und Nenner ein Frame auseinander. */
+    if (g_prof_an) {
+        g_prof_vbl = (u16)(g_prof_vbl + (u16)vbl);
+        g_prof_fr++;
+        if (g_prof_fr >= (u16)HW_PROF_FRAMES) g_prof_fertig = 1u;
+    }
+    g_prof_an = (u8)((!g_prof_fertig && g_hwb_zustand == 1u) ? 1u : 0u);
+}
+#define PROF_A()   prof_a()
+#define PROF_B(n)  prof_b((u8)(n))
+#define PROF_A2()  prof_a2()
+#define PROF_B2(n) prof_b2((u8)(n))
+#endif
+#endif
+/* Ausserhalb des HW_BENCH-Blocks: die Aufrufstellen stehen im normalen
+   Spielcode und muessen auch dann uebersetzen, wenn gar nicht gemessen wird. */
+#ifndef PROF_A
+#define PROF_A()   ((void)0)
+#define PROF_B(n)  ((void)0)
+#define PROF_A2()  ((void)0)
+#define PROF_B2(n) ((void)0)
+#endif
+#if !HW_BENCH
+#define HW_PROF 0
 #endif
 /* MANDATORY INIT. Every counter here is a static WITHOUT an initialiser -
    the emulator zeroes RAM at start, REAL HARDWARE DOES NOT, and the
@@ -6902,6 +7191,12 @@ static void vbc_stats_reset(void) {
 
 static void fps_tick(u8 frame_ref) {
     u8 vbc = (u8)(VBCounter - frame_ref);   /* the u8 subtraction wraps correctly */
+#if HW_PROF
+    /* Hier, nicht im 30-Frame-Fenster darunter: der Profiler misst eine
+       eigene, kuerzere Strecke (HW_PROF_FRAMES) und braucht die VBlanks
+       DIESES Frames als Nenner. */
+    prof_frame_ende(vbc);
+#endif
 #if OAM_IN_SCORE
     if (g_oam_pool_n < g_oam_free_min) g_oam_free_min = g_oam_pool_n;
 #endif
@@ -7151,6 +7446,7 @@ static void enemies_update(void) {
     /* Run the trigger scan (ROM access to lvl_spawn_row) ONLY on a row
        change - no spawn can become due otherwise. Saves 140 ROM reads on
        47 of every 48 frames. */
+    PROF_A2();
     if (g_spawn_row_changed) {
         /* Lead RAMP, against both the startup burst and missing opening
            waves. At the full +12 lead every wave in rows 0..12 would have
@@ -7167,7 +7463,15 @@ static void enemies_update(void) {
             if (!g_spawn_fired[s] && (u16)(g_spawn_scroll_row + lead) >= (u16)(lvl_spawn_row[s] + (u16)SPAWN_TRIGGER_DELAY)) {
                 g_spawn_fired[s] = 1u;
                 g_spawn_left[s]  = lvl_spawn_count[s];
-                if (g_spawn_left[s]) g_spawn_pending++;   /* see g_spawn_pending */
+                if (g_spawn_left[s]) {
+                    g_spawn_pending++;   /* see g_spawn_pending */
+                    /* Fenster aufweiten - die EINZIGE Stelle, die eine Welle
+                       OEFFNET (jeder andere Schreibzugriff auf g_spawn_left
+                       setzt auf 0). */
+                    if (g_spawn_lo == SPAWN_FENSTER_LEER) { g_spawn_lo = s; g_spawn_hi = s; }
+                    else { if (s < g_spawn_lo) g_spawn_lo = s;
+                           if (s > g_spawn_hi) g_spawn_hi = s; }
+                }
                 g_spawn_timer[s] = 0u;
 #if WORM_TEST_MODE
                 g_cur_wave = s;   /* test aid: last triggered wave (spawn index) for the HUD */
@@ -7176,13 +7480,45 @@ static void enemies_update(void) {
         }
     }
 
+    PROF_B2(19);   /* Slot 19: Trigger-Scan (nur bei Zeilenwechsel) */
     /* This loop used to run over all 113 waves EVERY frame even when none
        had members outstanding, which is nearly always. g_spawn_pending
        counts how many waves are still open; at 0 the whole loop is
        skipped. */
-    if (g_spawn_pending)
-    for (s = 0u; s < (u8)LVL_SPAWN_COUNT; s++) {
+    PROF_A2();
+    if (!g_spawn_pending) { g_spawn_lo = SPAWN_FENSTER_LEER; g_spawn_hi = 0u; }
+    else {
+    u8 f_lo = SPAWN_FENSTER_LEER, f_hi = 0u;
+    /* ===== IST UEBERHAUPT EIN GEGNERPLATZ FREI? EINMAL, NICHT JE WELLE =====
+       Der teure Teil dieser Schleife ist nicht der Wellenscan, sondern was
+       JEDE offene Welle darin tut: sie sucht sich mit einer eigenen
+       Schleife ueber alle MAX_ENEMIES Plaetze einen freien. Ist der Pool
+       voll - und in einer dichten Szene ist er das dauernd, weil das Schiff
+       nicht ausweicht - findet KEINE davon einen, jede zahlt aber ihre
+       zehn Durchlaeufe. Bei 113 offenen Wellen sind das 1130 Runden je
+       Frame, um nichts zu tun.
+       Der Pool kann sich innerhalb dieser Schleife nur FUELLEN, nie leeren
+       (Gegner sterben anderswo). Ein einmal ermitteltes "voll" bleibt also
+       bis zum Ende richtig, und ein "frei" wird von der inneren Suche
+       ohnehin noch einmal geprueft. Der Test ist damit eine reine
+       Abkuerzung, keine zweite Wahrheit. */
+    u8 platz_frei = 0u;
+    for (i = 0u; i < MAX_ENEMIES; i++)
+        if (!g_enemies[i].active) { platz_frei = 1u; break; }
+    /* Sicherung: stuende etwas offen, ohne dass das Fenster es kennt, wird
+       lieber einmal voll gescannt als eine Welle verloren. Darf nie
+       zuschlagen - PROBE_SPAWNFENSTER zaehlt genau das mit. */
+    if (g_spawn_lo == SPAWN_FENSTER_LEER) { g_spawn_lo = 0u; g_spawn_hi = (u8)(LVL_SPAWN_COUNT - 1u); }
+#if PROBE_SPAWNFENSTER
+    g_probe_fenster_frames++;
+    { u16 sp = (u16)((u16)g_spawn_hi - (u16)g_spawn_lo + 1u);
+      g_probe_iter_acc = (u16)(g_probe_iter_acc + sp);
+      if (g_probe_iter_acc >= 64u) { g_probe_iter_acc = (u16)(g_probe_iter_acc - 64u); g_probe_fenster_iter++; } }
+#endif
+    for (s = g_spawn_lo; s <= g_spawn_hi; s++) {
         if (g_spawn_left[s] == 0u) continue;
+        if (f_lo == SPAWN_FENSTER_LEER) f_lo = s;
+        f_hi = s;
         if (g_spawn_timer[s] == 0u) {
             u16 spr      = lvl_spawn_spr[s];
             u16 n        = spr & 0x01FFu;
@@ -7230,6 +7566,12 @@ static void enemies_update(void) {
                 }
                 continue;
             }
+            /* Pool voll -> diese Welle kann nichts setzen. Genau das
+               taete die Suche unten auch, nur mit zehn Runden. Kein
+               Zustand aendert sich dabei (g_spawn_timer bleibt 0, der
+               naechste Frame versucht es wieder), das Ueberspringen ist
+               also gleichwertig. */
+            if (!platz_frei) continue;
             spawned = 0u;
             for (i = 0u; i < MAX_ENEMIES; i++) {
                 if (!g_enemies[i].active) {
@@ -7311,7 +7653,38 @@ static void enemies_update(void) {
             g_spawn_timer[s]--;
         }
     }
+    /* Fenster aus dem TATSAECHLICHEN Bestand neu setzen: so schrumpft es
+       von selbst wieder, auch nachdem es einmal weit war. */
+    g_spawn_lo = f_lo;
+    g_spawn_hi = (u8)((f_lo == SPAWN_FENSTER_LEER) ? 0u : f_hi);
+    /* !! UND HIER STECKT DER EIGENTLICHE FEHLER, den erst der Profiler
+       sichtbar gemacht hat. g_spawn_pending soll zaehlen, wie viele Wellen
+       noch offen sind; heruntergezaehlt wird es aber nur auf den Wegen,
+       die eine Welle regulaer leeren. Die Sammelruecksetzungen
+       (Checkpoint-Wiedereinstieg, BENCH-Aufbauten) nullen g_spawn_left
+       fuer alle Wellen, ohne den Zaehler mitzunehmen - er bleibt positiv,
+       waehrend nichts mehr offen ist, und die Schleife lief von da an
+       JEDEN FRAME ueber alle 113 Wellen, um jedes Mal nichts zu finden.
+       Gemessen: 419 tatsaechlich offene Wellen-Frames im ganzen Lauf,
+       aber 36,6 Rasterzeilen je Frame in dieser Schleife.
+       Dieser Durchlauf hat gerade festgestellt, dass nichts offen ist -
+       damit ist der Zaehler nachweislich veraltet und wird berichtigt. */
+    if (f_lo == SPAWN_FENSTER_LEER) g_spawn_pending = 0u;
+    }
+#if PROBE_SPAWNFENSTER
+    /* Gegenprobe: liegt nach dem Durchlauf noch eine offene Welle
+       AUSSERHALB des Fensters, hat das Fenster sie verloren. Muss 0
+       bleiben. Kostet einen vollen 113er-Scan je Frame - nur zum Pruefen. */
+    { u8 q, lo = g_spawn_lo, hi = g_spawn_hi;
+      for (q = 0u; q < (u8)LVL_SPAWN_COUNT; q++) {
+          if (!g_spawn_left[q]) continue;
+          if (lo == SPAWN_FENSTER_LEER || q < lo || q > hi) g_probe_fenster_diff++;
+          g_probe_fenster_seen++;
+      } }
+#endif
 
+    PROF_B2(20);   /* Slot 20: Spawn-Schleife ueber die offenen Wellen */
+    PROF_A2();
     for (i = 0u; i < MAX_ENEMIES; i++) {
         u16 len, off;
         u8 anim_len;
@@ -7391,8 +7764,15 @@ static void enemies_update(void) {
         }
         /* Firing skips off-screen enemies just like collision and drawing
            (the same CLIP_Y fastpath as everywhere else). */
-        if (g_enemies[i].active && g_enemies[i].y < (u8)CLIP_Y) enemy_fire_tick(&g_enemies[i]);
+        if (g_enemies[i].active && g_enemies[i].y < (u8)CLIP_Y) {
+            PROF_B2(21);            /* Slot 21: Bewegung bis hierher */
+            PROF_A2();
+            enemy_fire_tick(&g_enemies[i]);
+            PROF_B2(22);            /* Slot 22: Feuern (je Gegner) */
+            PROF_A2();              /* weiter mit der Bewegung des naechsten */
+        }
     }
+    PROF_B2(21);   /* Slot 21: Rest der Bewegungsschleife */
 }
 
 #if BENCH_DETERM
@@ -10636,12 +11016,101 @@ static void beam_collide(void) {
    invulnerable). An 8x8 box per part (tile top left). Called after
    check_collisions() because it uses g_wp_bullets, which is declared
    there. */
+/* ===== EVERYTHING THAT DOES NOT DEPEND ON THE PART IS RESOLVED ONCE =====
+   This loop is two worms of up to six parts, so it ran twelve times a
+   frame, and every one of those twelve rounds redid the same work: the
+   ship hit zone through ship_hitzone_rect(), the beam width through
+   beam_hit_w(), and the shift of every module shot from its 1/16 pixel
+   position down to screen pixels. Twelve far calls for one answer.
+
+   THE SHIP RECTANGLE IS PROVABLY CONSTANT WITHIN THE CALL, which is what
+   makes hoisting it legal rather than merely plausible: it depends on
+   g_player.x/y and the tilt stage, and the only thing this loop can do to
+   the player is player_hit(). That sets energy, i-frames and, on a lost
+   life, g_respawn_pending - THE REBUILD ITSELF HAPPENS AT THE END OF THE
+   FRAME (respawn_do), not here. Nothing inside the loop moves the ship.
+
+   The rectangle tests are written out instead of going through
+   rects_overlap(). Both boxes are known here - a worm part is always 8x8
+   and a shot 8 x g_f_bullet_box_h - so the call passed eight arguments to
+   do four comparisons, twelve times per part. Same comparisons, same
+   order, copied from rects_overlap(). */
+
+/* The one box in every one of these tests is the part, always 8x8 at
+   sx/sy, so only the other one is a parameter. Written as the NEGATION of
+   rects_overlap's two early returns, in its order: x first, and && stops
+   there when x already separates them. */
+#define WW_OVER(ax, aw, ay, ah)                                            \
+    ((s16)((ax) + (aw)) >  sx  && sx8 > (ax) &&                            \
+     (s16)((ay) + (ah)) >  sy  && sy8 > (ay))
+
+/* ===== PROBE_WWCOLL - THE WRITTEN-OUT TEST AGAINST rects_overlap() =====
+   The risk in writing a comparison out is a transcription slip: one <=
+   that should be <, one box swapped for the other. It would not show up
+   as a crash - a wall worm segment would simply survive a shot now and
+   then, and nobody would connect that to a performance change days later.
+   So with this on, every single test is ALSO run through rects_overlap()
+   and the two answers compared. Not the outcome of the loop, every
+   individual pair: a disagreement is caught at the first one, before the
+   loop can hide it behind a break. Set to 1, build, play through the worm
+   band - g_probe_ww_diff must stay 0. Off for release. */
+#define PROBE_WWCOLL 0
+#if PROBE_WWCOLL
+u16 g_probe_ww_diff;   /* disagreements - MUST stay 0 (public, so xenon.map lists it) */
+u16 g_probe_ww_seen;   /* tests compared, so a silent zero is visible */
+#define WW_PRUEF(ov, ax, ay, aw, ah)                                       \
+    do { g_probe_ww_seen++;                                                \
+         if ((u8)(ov) != rects_overlap((ax), (ay), (u16)(aw), (u16)(ah),   \
+                                        sx, sy, 8u, 8u))                   \
+             g_probe_ww_diff++; } while (0)
+#else
+#define WW_PRUEF(ov, ax, ay, aw, ah) ((void)0)
+#endif
 static void wallworms_collide(void) {
     u8 w, k, i;
+    s16 srx, sry;                  /* ship hit zone, resolved once (see above) */
+    u8  srw, srh;
+    u8  bh;                        /* sweep box height of the main gun shot */
+    u8  bereit = 0u;               /* has the once-per-call setup run? see below */
+    u8  beam_da, bmw, bmh;         /* the beam column, resolved once */
+    s16 bmx, bmy;
+
+    /* !! NONE OF THESE ARE PRE-SET TO ZERO, AND THAT IS THE POINT. Every
+       one is written by the setup below and read only after it, guarded by
+       `bereit`. Initialising them here would put ten stores back into
+       every frame that has no wall worm at all - which is most frames, and
+       measurably (0,3 % in the emulator) the whole reason the first
+       version of this hoist came out slower than no hoist. */
+
     for (w = 0u; w < (u8)WALLWORM_SLOTS; w++) {
         TWallWorm *ww = &g_wallworms[w];
         s16 holey, holex;
         if (!ww->active) continue;
+        /* !! THE SETUP RUNS ON THE FIRST LIVE WORM, NOT AT THE TOP.
+           Hoisted to the top it was a REGRESSION, and the emulator said so
+           before hardware ever saw it: most frames have no wall worm at
+           all, and those frames then paid a ship_hitzone_rect() call and a
+           beam resolve for a loop that never runs a single round. Measured
+           in the worm band it still cost 0,4 % against the version without
+           the hoist. Behind this flag the work happens exactly once per
+           call, and only when there is something to test.
+           OPTIMISING A LOOP MEANS NOTHING IF THE LOOP USUALLY HAS NO
+           ROUNDS - the setup is then pure addition. */
+        if (!bereit) {
+            bereit = 1u;
+            bh = g_f_bullet_box_h;
+            ship_hitzone_rect(&srx, &sry, &srw, &srh);
+            beam_da = (u8)(g_beam.on && g_beam.oam != OAM_NONE && g_beam.top < g_beam.y);
+            if (beam_da) {
+                /* Same box as beam_collide: left edge shifted half a
+                   width, so the test follows the drawn column instead of
+                   a fixed tile. */
+                bmw = beam_hit_w(0u, g_beam.stage);
+                bmx = (s16)((s16)g_beam.x - (s16)(bmw >> 1));
+                bmy = (s16)g_beam.top;
+                bmh = (u8)((u8)(g_beam.y + 8u) - g_beam.top);
+            }
+        }
         holey = wallworm_hole_screen_y_ww(ww);
         holex = (s16)((s16)WALLWORM_EXITS[ww->exit_idx].col * 8);
         for (k = 0u; k < ww->part_count; k++) {
@@ -10649,43 +11118,51 @@ static void wallworms_collide(void) {
             s16 sx = (s16)(holex + p->wx);
             s16 sy = (s16)(holey + p->wy);
             u8 hit = 0u;
+            s16 sx8, sy8;
             if (!p->alive || sy < 0 || sy >= (s16)CLIP_Y || sx < 0 || sx >= (s16)SCR_W) continue;
+            sx8 = (s16)(sx + 8); sy8 = (s16)(sy + 8);   /* the part box is always 8x8 */
             for (i = 0u; i < (u8)MAX_BULLETS && !hit; i++) {
+                s16 bx, by;
+                u8  ov;
                 if (!g_bullets[i].active) continue;
-                if (rects_overlap((s16)g_bullets[i].x, (s16)g_bullets[i].y, BULLET_HIT_W, g_f_bullet_box_h,
-                                  sx, sy, 8u, 8u)) {   /* +SWEEP: sweep test, see BULLET_SWEEP */
-                    g_bullets[i].active = 0u; hit = 1u;
-                }
+                /* +SWEEP: sweep test, see BULLET_SWEEP */
+                bx = (s16)g_bullets[i].x;
+                by = (s16)g_bullets[i].y;
+                ov = (u8)(WW_OVER(bx, (s16)BULLET_HIT_W, by, (s16)bh));
+                WW_PRUEF(ov, bx, by, (s16)BULLET_HIT_W, (s16)bh);
+                if (!ov) continue;
+                g_bullets[i].active = 0u; hit = 1u;
             }
             for (i = 0u; i < (u8)MAX_WPBULLETS && !hit; i++) {
-                s16 bx, by;
+                s16 bx, by, bw, bhh;
+                u8  ov;
                 if (!g_wp_bullets[i].active) continue;
                 bx = (s16)(g_wp_bullets[i].x_fix >> 4);
                 by = (s16)(g_wp_bullets[i].y_fix >> 4);
+#if TEST_COLL_HALF
                 /* Weapon shots fly in any direction (homing), so with
                    halved checking the box is widened by half the two-frame
                    path (4 px) all round rather than extended in one
                    direction. */
-#if TEST_COLL_HALF
-                if (rects_overlap((s16)(bx - 4), (s16)(by - 4), BULLET_HIT_W + 8u, BULLET_HIT_H + 8u, sx, sy, 8u, 8u)) {
+                bx = (s16)(bx - 4); by = (s16)(by - 4);
+                bw = (s16)(BULLET_HIT_W + 8u); bhh = (s16)(BULLET_HIT_H + 8u);
 #else
-                if (rects_overlap(bx, by, BULLET_HIT_W, BULLET_HIT_H, sx, sy, 8u, 8u)) {
+                bw = (s16)BULLET_HIT_W; bhh = (s16)BULLET_HIT_H;
 #endif
-                    g_wp_bullets[i].active = 0u; hit = 1u;
-                }
+                ov = (u8)(WW_OVER(bx, bw, by, bhh));
+                WW_PRUEF(ov, bx, by, bw, bhh);
+                if (!ov) continue;
+                g_wp_bullets[i].active = 0u; hit = 1u;
             }
             /* The beam takes the part out WITHOUT being consumed - it
                pierces (see beam_collide). Tested here rather than there,
                because only this loop knows where a part actually sits: its
                position is the hole plus the path offset, not a field of its
-               own. */
-            /* Same box as beam_collide: left edge shifted half a width, so
-               the test follows the drawn column instead of a fixed tile. */
-            if (!hit && g_beam.on && g_beam.oam != OAM_NONE && g_beam.top < g_beam.y) {
-                u8 bmw = beam_hit_w(0u, g_beam.stage);
-                if (rects_overlap((s16)((s16)g_beam.x - (s16)(bmw >> 1)), (s16)g_beam.top, bmw,
-                                  (u8)((u8)(g_beam.y + 8u) - g_beam.top), sx, sy, 8u, 8u))
-                    hit = 1u;
+               own. The column itself is resolved once, above the loop. */
+            if (!hit && beam_da) {
+                u8 ov = (u8)(WW_OVER(bmx, (s16)bmw, bmy, (s16)bmh));
+                WW_PRUEF(ov, bmx, bmy, (s16)bmw, (s16)bmh);
+                if (ov) hit = 1u;
             }
 #if BENCH_NOKILL
             if (hit) continue;   /* benchmark: the wall worm segment survives (the bullet is consumed) */
@@ -10698,18 +11175,80 @@ static void wallworms_collide(void) {
                the same zone as everywhere else: from the tool, with
                SHIP_HIT_FALLBACK as the fallback (ship_hitzone_rect). ONE
                source, or the boxes drift apart again at the next
-               export. */
-            { s16 srx, sry; u8 srw, srh;
-              ship_hitzone_rect(&srx, &sry, &srw, &srh);
-              if (rects_overlap(srx, sry, srw, srh, sx, sy, 8u, 8u))
-                  { g_dmg_src = 6u; player_hit(); } }
+               export. Resolved once above the loop, not per part.
+               !! NO i-FRAME SHORTCUT HERE, THOUGH IT LOOKS FREE. With
+               inv_cd running player_damage() does nothing, so skipping the
+               test would cost no damage - but it would also skip
+               g_dmg_src, and that byte is read back by the telemetry.
+               Cheaper AND observably different is not the same as cheaper.
+               This whole rewrite is mechanical on purpose, so that the
+               probe below can prove it. */
+            { u8 ov = (u8)(WW_OVER(srx, (s16)srw, sry, (s16)srh));
+              WW_PRUEF(ov, srx, sry, (s16)srw, (s16)srh);
+              if (ov) { g_dmg_src = 6u; player_hit(); } }
         }
     }
 }
 
+/* ===== SUB-BLOCKS 27..31: SPLITTING BLOCK 4 (COLLISIONS) =====
+   Block 4 came in at 18 VBlanks per 30 frames on hardware (05.08.) - the
+   largest remaining single item, and with a factor of 3.4 against the
+   emulator the most memory-heavy one as well. But "block 4" is five
+   separate pieces of work that have never been told apart:
+
+     27  shots against enemies / metasprites / worms   (check_collisions, part 1)
+     28  ship contact plus the map object probe        (check_collisions, part 2)
+     29  wall crawlers                                 (wcrawls_collide)
+     30  the beam                                      (beam_collide)
+     31  wall worms                                    (wallworms_collide)
+
+   !! EVERY ONE OF THESE CHANGES THE SCENE WHEN SWITCHED OFF - that is the
+   mess_5 error class, and here it is unavoidable: a collision that does
+   not happen leaves the target alive, and the frames after it draw more
+   than the reference did. The bias always points the SAME way (the
+   measuring build has more to do elsewhere), so every figure read off here
+   is a LOWER BOUND on the cost of that sub-block. Good enough to find the
+   suspect, not good enough to publish as its price. The price of the fix
+   is then measured the honest way: reference against optimised build, same
+   scene in both.
+
+   !! MEASURED 05.08., AND THE ANSWER WAS THAT THE METHOD IS SPENT HERE.
+   Against the optimised baseline block 4 switched off comes out at -0.3 %
+   while sub-block 27 switched off comes out at +1.3 % - the part costs
+   NEGATIVE time, which of course it does not. Shots that never hit leave
+   the enemies alive, and drawing them is dearer than the collision test
+   ever was. The contamination is now larger than the signal. These
+   sub-blocks stay in as a map of what is in the block; the numbers come
+   from A/B builds. */
+
+/* ===== TRIED AND MEASURED AND THROWN OUT: THE SHIP CONTACT TEST WRITTEN
+   OUT (05.08.) =====
+   The three ship contact loops call rects_overlap_cached() with ten
+   arguments per enemy, four of which are the SAME ship box every time, and
+   unlike the shot loops there is no y prefilter in front of the call.
+   Writing the test out, with the ship's two far edges resolved once, looks
+   like the same win that ship_probe_cells was.
+   It is not. Measured in the emulator, same scene, same frames:
+
+     Szene                       ausgeschrieben gegen Aufruf
+     Standard (wenig Gegner)     +1,6 %   (Befehle 13459 -> 13632)
+     Wurmband (viele Gegner)     -0,3 %   (Befehle 15135 -> 15060)
+
+   Coherent once one stops looking at the test alone: the written-out form
+   trades a fixed setup per check_collisions() call against a saving per
+   enemy TESTED. Few enemies on screen and the setup wins, many and it
+   loses. The default scene is the common case.
+   The four extra locals are the likelier culprit for the size of the
+   loss - they widen the frame of a function that also holds the shot
+   loops, so those pay too. NOT reinstated without a hardware measurement:
+   this is exactly the shape of Thor's optimisations, where the emulator
+   and the hardware disagreed in opposite directions.
+   The call stays. PROBE_SHCOLL and the SH_OVER macro are gone with it. */
+
 static void check_collisions(void) {
     u8 i, j;
 
+    if (PROF_OFF(27)) goto coll_nach_schuessen;
     for (i = 0; i < MAX_BULLETS; i++) {
         s16 brx, bry;   /* shot rectangle resolved ONCE per shot (aspr=0 -> a fixed 8x8 box) */
         u8  by_ref;
@@ -10777,17 +11316,19 @@ static void check_collisions(void) {
         }
     }
 
+coll_nach_schuessen:
     /* Wall crawlers: BEFORE the inv_cd exit, so shot hits still count
        during the invulnerability after losing a life (the ship contact
        half turns ship_vuln off itself). The g_busy flag keeps the block
        out of the frame entirely when no crawler is on screen. */
-    if (g_busy_wcrawl) {
+    if (g_busy_wcrawl && !PROF_OFF(29)) {   /* sub-block 29: wall crawlers */
         s16 wsrx, wsry; u8 wsrw, wsrh;
         ship_hitzone_rect(&wsrx, &wsry, &wsrw, &wsrh);
         wcrawls_collide(wsrx, wsry, wsrw, wsrh, (u8)(g_player.inv_cd == 0u));
     }
 
     if (g_player.inv_cd > 0) return;
+    if (PROF_OFF(28)) return;   /* sub-block 28: ship contact plus the map object probe */
     {
         /* Ship hit zone resolved once per frame through the O(1) table
            (ship_hitzone_rect(), no 17-entry search) rather than up to 14
@@ -10847,6 +11388,7 @@ static void check_collisions(void) {
 
     /* The ship touches a map object: make it wilt (once) and additionally
        take a life if lvl_mapobj_ship_damage is set. */
+    if (!PROF_OFF(32))   /* sub-block 32: the map object probe, twelve points */
     {
         u8 obj = ship_hits_mapobj(g_player.x, g_player.y);
         if (obj != MAPOBJ_NONE) {
@@ -12232,11 +12774,60 @@ static void score_draw(void) {
           digit[3] = 0u; }
 #endif
 #if PROFILE_MODE || FPS_VBC_DISPLAY
-        if (!g_score_view)
+        /* !! DIESER BLOCK SCHREIBT DIE ZIFFERN 2..0 NOCH EINMAL und wuerde
+           den Profilerwert ueberschreiben - dieselbe Falle wie bei
+           OAM_IN_SCORE am 31.07., wo die ROM hartnaeckig 090 zeigte.
+           Deshalb steht der Profiler nicht hier oben, sondern hier drunter
+           ausgesperrt. */
+        if (!g_score_view
+#if HW_PROF
+            && !g_prof_fertig
+#endif
+           )
         { u16 vs = g_vbc_sum; if (vs > 999u) vs = 999u;
           digit[2] = (u8)(vs / 100u);
           digit[1] = (u8)((vs / 10u) % 10u);
           digit[0] = (u8)(vs % 10u); }
+#endif
+#if HW_PROF
+        /* !! BEWUSST OHNE `if (!g_score_view)`, UND ALS LETZTES.
+           Zwei Gruende, beide schon einmal Zeit gekostet:
+           1. Wer VOR den anderen Bloecken schreibt, dessen Ziffern werden
+              ueberschrieben - so zeigte die OAM-Diagnose am 31.07.
+              hartnaeckig 090.
+           2. Die Anzeige an die Ansicht zu haengen ist die Falle, die
+              CLAUDE.md fuer den Benchmark beschreibt ("die Ansicht MUSS
+              die Benchmark-Ansicht sein"). Fuer eine reine Mess-ROM ist
+              das unnoetig gefaehrlich: die Zahlen sollen dastehen, egal
+              was OPTION zuletzt gemacht hat. Die Unverwundbarkeit haengt
+              ohnehin nicht daran, solange das Fenster offen ist -
+              god_active() prueft g_hwb_zustand ZUERST.
+
+           LINKE zwei Ziffern = Slot, RECHTE drei = Wert, LINKS/RECHTS
+           blaettert. Der Wert sind RASTERZEILEN JE FRAME: HW_PROF_FRAMES
+           ist 64, also ein Schieben um 6 statt einer Division. Ein Frame
+           hat 199 Zeilen; bei 122 VBlanks je 30 Frames sind das rund 800
+           Zeilen je Spielframe - ein Slot mit 080 ist also rund ein
+           Zehntel. Slot 14 = VBlanks je Frame mal 10 (der Nenner, aus
+           DERSELBEN Strecke), Slot 15 = Preis eines Messpaares. */
+        if (g_prof_fertig) {
+            u16 pv;
+            if (g_prof_sicht == 14u) {
+                pv = (u16)(g_prof_vbl * 10u);
+                pv = (u16)(pv >> 6);
+            } else {
+                pv = g_prof_acc[g_prof_sicht];
+                pv = (u16)(pv >> 6);
+            }
+            if (pv > 999u) pv = 999u;
+            digit[6] = (u8)(g_prof_sicht / 10u);
+            digit[5] = (u8)(g_prof_sicht % 10u);
+            digit[4] = 0u;
+            digit[3] = 0u;
+            digit[2] = (u8)(pv / 100u);
+            digit[1] = (u8)((pv / 10u) % 10u);
+            digit[0] = (u8)(pv % 10u);
+        }
 #endif
         /* digits 0..4 remain the score - digits 5 and 6 computed above are
            deliberately overwritten. */
@@ -12250,6 +12841,15 @@ static void score_draw(void) {
     top = 6u;
     if (!g_score_view)
         while (top > 0u && digit[top] == 0u) top--;
+#if HW_PROF
+    /* !! KEINE NULLENUNTERDRUECKUNG, SOBALD DER PROFILER ANZEIGT.
+       Sie hat auf Hardware genau das angerichtet, wogegen sie gedacht ist:
+       Slot 0 mit Wert 34 stand als blosses "34" da - die beiden linken
+       Ziffern, also die SLOT-NUMMER, waren weggeputzt, und die Zahl war
+       nicht mehr zuzuordnen. Hier sind fuehrende Nullen Information:
+       das Format ist SS00WWW, Slot links, Wert rechts. */
+    if (g_prof_fertig) top = 6u;
+#endif
 
     for (d = 0; d < 7; d++) {
         u8 col = (u8)(8u - d);   /* columns 8..2, units on the right */
@@ -12597,6 +13197,8 @@ static void game_start(void) {
             g_spawn_left[sp]  = 0u;
             g_spawn_timer[sp] = 0u;
         }
+        g_spawn_lo = SPAWN_FENSTER_LEER;   /* ausdruecklich, siehe g_spawn_lo */
+        g_spawn_hi = 0u;
     }
     g_spawn_scroll_row    = 0u;   /* level start = trigger row 0 */
 
@@ -13673,6 +14275,9 @@ static void shop_resume(void) {
        counting from a moment before them would put a one-off cost into
        every run. */
     hwb_open();
+#if HW_PROF
+    prof_reset();   /* jeder Zaehler ausdruecklich - siehe prof_reset */
+#endif
     vbc_stats_reset();
 #endif
     /* The shop has overwritten the ENTIRE character RAM with its own
@@ -15334,6 +15939,9 @@ void main(void) {
     InitNGPC();
 #if HW_BENCH
     hwb_boot();   /* the one-shot guards, explicitly - see there */
+#if HW_PROF
+    prof_reset();
+#endif
 #endif
     K2GE_2D_CONTROL &= (u8)~K2GE_NEG_BIT;
     /* Force the full CPU clock of 6.144 MHz: the game never set the clock
@@ -15483,7 +16091,10 @@ void main(void) {
 #else
         /* Fixed cap, but switchable - 2 VBlanks = 30 fps, 3 = 20 fps (see
            the frame rate block at the top). */
+        PROF_B(18);   /* Slot 18: Wiedereinstieg, Zustandsmaschine, Frameende */
+        PROF_A();
         while ((u8)(VBCounter - frame_ref) < g_fps_div) ;
+        PROF_B(13);   /* Slot 13: DAS WARTEN AUF DEN FRAMEDECKEL */
 #endif
         /* Safety flush for EVERY state. The in-play flush sits inside the
            STATE_PLAY branch, so g_neg_want kept its last value when the
@@ -15506,6 +16117,7 @@ void main(void) {
 #endif
         fps_tick(frame_ref);   /* validation: measures the VBlanks of the frame just finished */
         frame_ref = VBCounter;
+        PROF_A();
         input_update();
 #if FPS_EXACT_HALVES
         /* Frame parity for the half movement steps (FPS_SPD_ALT /
@@ -15528,6 +16140,7 @@ void main(void) {
             g_snd_acc = (u8)(g_snd_acc - 2u);
             Sounds_Update();
         }
+        PROF_B(16);   /* Slot 16: Eingabe und Musiktreiber */
 #if BENCH_FIRE
         g_pad |= J_A;      /* continuous fire for the benchmark scene (see BENCH_FIRE) */
 #endif
@@ -15592,8 +16205,10 @@ void main(void) {
               if (!sw_done) { sw_done = 1u;
                   g_player.weapons_active |= (u16)(START_WEAPONS); } }
 #endif
+            PROF_A();
             player_update();
             beam_update();   /* flying laser, see beam_draw */
+            PROF_B(0);       /* Slot 0: Spielersteuerung samt Terrainsonde */
 #if BENCH_DETERM
             bench_determ_tick();   /* fixed enemy scene for repeatable measurements (see BENCH_DETERM) */
 #endif
@@ -15630,9 +16245,49 @@ void main(void) {
             /* End of the measuring window: the row, checked every frame.
                hwb_close() only takes the first one, so it costs a compare
                after that. */
+#if HW_PROF
+            /* !! IN DER PROFILER-ROM SCHLIESST DAS FENSTER NIE.
+               Es ist der Lebensversicherung des Ablesens: an
+               g_hwb_zustand haengt die Unverwundbarkeit (god_active). Mit
+               geschlossenem Fenster stirbt das Schiff, das Spiel startet
+               neu, game_start() ruft prof_reset() - und die sechzehn
+               Zahlen, die der Nutzer gerade abschreibt, sind weg. Die
+               Profilmessung selbst ist nach 64 Frames ohnehin fertig; der
+               VBlank-Mittelwert, den hwb_close() sonst festhaelt, steht
+               als Slot 14 in der Tabelle. */
+            if (!g_prof_fertig)
+#endif
             { u16 brow = (u16)(g_scroll_y >> 3);
               if (brow >= (u16)HW_BENCH_ROW_END) hwb_close();
               else if (g_hwb_n >= (u16)HW_BENCH_MAX_WIN) hwb_close(); }
+#endif
+#if HW_PROF
+            /* !! HIER WIRD DIE ECHTE TASTATUR GELESEN, NICHT g_pad.
+               Waehrend des Messfensters ist g_pad VORGEGEBEN (siehe
+               input_update) - das ist der Sinn des Benchmarks, aber es
+               heisst auch, dass die Tasten des Nutzers dort NICHT
+               ankommen. Die erste Fassung haengte das Blaettern an
+               g_pad_pressed und zusaetzlich an "Fenster geschlossen":
+               auf Hardware stand damit Slot 0 auf dem Schirm und nichts
+               ging mehr - der Nutzer sass drei Minuten vor einer
+               einzigen Zahl. Der Rohwert aus JOYPAD laeuft am Skript
+               vorbei, mit eigener Flankenerkennung.
+               Das Fenster bleibt dabei OFFEN und muss es auch: daran
+               haengt die Unverwundbarkeit (god_active prueft
+               g_hwb_zustand). Geschlossen wuerde das Schiff sterben, das
+               Spiel neu starten - und prof_reset() die Zahlen loeschen,
+               die gerade abgelesen werden. Das Blaettern stoert die
+               laufende Messung nicht: sie ist nach 64 Frames fertig, und
+               die Tasten wirken ohnehin nicht aufs Spiel. */
+            if (g_prof_fertig) {
+                u8 roh    = JOYPAD;
+                u8 flanke = (u8)(roh & (u8)~g_prof_pad_alt);
+                g_prof_pad_alt = roh;
+                if (flanke & J_RIGHT)
+                    g_prof_sicht = (u8)((g_prof_sicht + 1u) % (u8)HW_PROF_SLOTS);
+                if (flanke & J_LEFT)
+                    g_prof_sicht = (u8)((g_prof_sicht + (u8)HW_PROF_SLOTS - 1u) % (u8)HW_PROF_SLOTS);
+            }
 #endif
 #if PICKUP_TEST
             /* proof script, see PICKUP_TEST. */
@@ -15646,6 +16301,7 @@ void main(void) {
             /* proof script, see NASHWAN_TEST. */
             { static u8 nw_done; if (!nw_done && (u16)(g_scroll_y >> 3) >= 6u) { nw_done = 1u; apply_pickup(7u, 0u); } }
 #endif
+            PROF_A();
             if (!PROF_OFF(5)) {          /* block 5: all shot systems */
 #if TEST_BULLET_UPDATE_HALF
             if (g_testpar) {             /* 2-frame tick, double step inside the functions */
@@ -15662,40 +16318,59 @@ void main(void) {
             mine_update();       /* MINE (weapon 5) */
             nashwan_update();    /* Super Nashwan Power (expiry timer) */
             }
+            PROF_B(1);       /* Slot 1: Schusssysteme (Block 5, erster Teil) */
             if (!PROF_OFF(3)) {          /* block 3: enemy and worm update */
+            PROF_A();
             if (!PROF_OFF(9))  enemies_update();
+            PROF_B(2);       /* Slot 2: enemies_update samt 113er-Spawnscan */
+            PROF_A();
             boss_update();   /* boss, from row BOSS_ROW */
             if (!PROF_OFF(10)) metaenemies_update();
+            PROF_B(3);       /* Slot 3: Boss und Metasprite-Gegner */
+            PROF_A();
             if (!PROF_OFF(11)) worms_update();
+            PROF_B(4);       /* Slot 4: Wuermer */
+            PROF_A();
             if (!PROF_OFF(12)) wallworms_update();  /* wall worms */
             wcrawls_update();   /* wall crawlers ("slime") */
+            PROF_B(5);       /* Slot 5: Wandwuermer und Wandkriecher */
             }
+            PROF_A();
             if (!PROF_OFF(5))
 #if TEST_BULLET_UPDATE_HALF
             { if (g_testpar) ebullets_update(); }   /* 2-frame tick, see above */
 #else
             ebullets_update();   /* AFTER enemies_update, where the shots are created */
 #endif
+            PROF_B(1);       /* Slot 1 wieder: Gegnerschuesse gehoeren zu Block 5 */
+#if PROBE_SHIPCELLS
+            probe_shipcells_tick();   /* old probe against new, on the real map */
+#endif
+            PROF_A();
             if (!PROF_OFF(4)) {          /* block 4: collisions */
 #if TEST_COLL_HALF
             if (g_testpar) {             /* every second frame only (measurement build, see TEST_COLL_HALF) */
             check_collisions();
-            beam_collide();      /* flying laser, see beam_collide */
-            wallworms_collide();
+            if (!PROF_OFF(30)) beam_collide();      /* flying laser, see beam_collide */
+            if (!PROF_OFF(31)) wallworms_collide();
             }
 #else
             check_collisions();
-            beam_collide();      /* flying laser, see beam_collide */
-            wallworms_collide(); /* after check_collisions (it uses g_wp_bullets) */
+            if (!PROF_OFF(30)) beam_collide();      /* flying laser, see beam_collide */
+            if (!PROF_OFF(31)) wallworms_collide(); /* after check_collisions (it uses g_wp_bullets) */
 #endif
             }
+            PROF_B(6);       /* Slot 6: Kollisionen (Block 4) */
+            PROF_A();
             pickups_update();
             if (!PROF_OFF(6))            /* block 6: scroll plus terrain streaming */
             scroll_update();
             g_dma_dirty = 1u;    /* rebuild the split table in the next VBlank (beam off) - not here mid-frame, or the bar flickers */
             thrust_update();
+            PROF_B(7);       /* Slot 7: Pickups, Scroll, Terrain-Streaming */
             /* SCR_Y is set in the VBlank ISR (my_vblank_isr), every
                VBlank, so the split stays stable. */
+            PROF_A();
             if (!PROF_OFF(7))            /* block 7: terrain animations */
 #if TEST_ANIM_OFF
             { }                          /* measurement build: animations completely off */
@@ -15703,6 +16378,7 @@ void main(void) {
             anim_update();
 #endif
             mapobj_rates_update();   /* accumulator firing plus the gated anemone */
+            PROF_B(8);       /* Slot 8: Terrain-Animationen */
             /* PERIODIC CLEANUP against ghost sprites. Every 128 frames,
                force EVERY drawing system through one pass even at busy==0.
                That limits the lifetime of a stuck sprite to a good four
@@ -15720,16 +16396,20 @@ void main(void) {
                   g_busy_enemies = g_busy_metas = g_busy_worms = 1u;
                   g_busy_wworms  = g_busy_pickups = g_busy_wpbul = g_busy_wpent = 1u;
               } }
+            PROF_A();
             if (!PROF_OFF(2))            /* block 2: draw the sprites (OAM) */
             draw_sprites();
+            PROF_B(9);       /* Slot 9: Sprites zeichnen (Block 2) */
             /* Enemy shots after draw_sprites but BEFORE score_draw() -
                behind all game objects, in front of the digits (OAM pool
                priority, see the drawing order comment). */
+            PROF_A();
             boss_draw();
             ebullets_draw();
             hit_flash_update();
             oam_scrub_step();   /* hardware ghost healing (lost unset writes), see oam_scrub_step() */
             score_roll_update();
+            PROF_B(10);      /* Slot 10: Boss, Gegnerschuesse, OAM-Pflege */
 #if PAL_SELFCHECK
             /* One palette per frame, see spr_pal_check_step(). */
             spr_pal_check_step();
@@ -15737,6 +16417,7 @@ void main(void) {
             if (g_pal_bad) { g_pal_heals++; spr_pal_load(); g_pal_bad = 0u; }
 #endif
 #endif
+            PROF_A();
             if (!PROF_OFF(8))            /* block 8: HUD bar plus digits */
             bar_redraw_flush();   /* draw the bar frame at the end of the frame (same timing as the digits, so nothing flashes up) */
             boss_body_flash();    /* boss body hit flash (tilemap, end-of-frame timing like the bar) */
@@ -15752,8 +16433,16 @@ void main(void) {
                their g_neg_on. Must come after boss_body_flash(), which
                sets it last. */
             neg_flush();
+            PROF_B(11);      /* Slot 11: HUD-Leiste, Ziffern, Bildschirmeffekte (Block 8) */
+            PROF_A();
             terr_sec_step();      /* stream the terrain section in steps, same timing */
             spr_sec_step();       /* sprite section, same timing */
+            PROF_B(12);      /* Slot 12: abschnittsweises Nachladen von Terrain und Sprites */
+            /* Slot 15 ist der LEERLAUF: was ein Messpaar selbst kostet.
+               Von jedem anderen Slot abzuziehen - siehe HW_PROF. */
+            PROF_A();
+            PROF_B(15);
+            PROF_A();   /* Slot 18 laeuft bis zum Framedeckel, siehe unten */
             /* Re-entry. "GET READY PLAYER 1" over the starfield first and
                until fire, as in the original after EVERY death
                (death-respawn.md). It runs BEFORE respawn_do(), so the
@@ -15782,7 +16471,14 @@ void main(void) {
 #endif
             /* Block 8 omits the bar, but the digits have to stay -
                otherwise the measurement cannot be read. */
+            /* !! ZWEITE EBENE, WEIL DIESES PAAR IN SLOT 18 LIEGT.
+               Auf der ersten Ebene wuerde das PROF_A hier den Startpunkt
+               von Slot 18 ueberschreiben, und Slot 18 maesse nur noch die
+               Zeit ab score_draw - genau die Verwechslung, gegen die
+               g_prof_t0_2 da ist. */
+            PROF_A2();
             score_draw();
+            PROF_B2(17);   /* Slot 17: Punktestand zeichnen */
 
             if (g_player.lives == 0 && g_player.inv_cd == 0) {
                 /* GAME OVER: a black screen, then load the INTRO font and
