@@ -12948,6 +12948,22 @@ static void score_draw(void) {
     for (d = 0; d < 7; d++) {
         u8 col = (u8)(8u - d);   /* columns 8..2, units on the right */
         if (d <= top) {
+#if HW_PROF
+            /* !! THE PROFILER USES THE BAR FONT, NOT THE SCORE FONT. The
+               shaded score digits are pretty but on the device 2, 3, 5
+               and 8 collapse into the same blob - the user could not read
+               the values off (06.08.), and a number that cannot be read
+               is a measurement that never happened. The bar digit set
+               (TILE_BAR_BASE+8..17, the same tiles as the crisp lives
+               digit) exists in VRAM permanently anyway. Only in the
+               measuring ROM - the game's score keeps its look. */
+            if (g_prof_fertig) {
+                u8 bi2 = (u8)(BAR_DIGIT_BASE + digit[d]);
+                put_cell(SCROLL_PLANE_2, barPal[bi2], col, g_bar_vrow,
+                         (u16)(TILE_BAR_BASE + bi2), 0u);
+                continue;
+            }
+#endif
             /* The hardware palette is scr2_pal_hw[2], where the logical
                map palette lvl_pal_scr2[2] sits and matches the digit
                colours EXACTLY. Do NOT use hardware slot 2 -
