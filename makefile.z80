@@ -1,0 +1,25 @@
+.SUFFIXES: .c .asm .rel .abs
+NAME = sndz80
+# sndz80.rel MUST be first: carthdr.h consts -> cartridge header at 0x200000.
+# Song data (Musik/xenon_songs.c) is #included directly into sndz80.c.
+OBJS = \
+	sndz80.rel \
+	library.rel \
+	\
+
+
+$(NAME).ngp: makefile.z80 ngpc.lcf $(OBJS)
+	tulink -la -o $(NAME).abs ngpc.lcf system.lib $(OBJS)
+	tuconv -Fs24 $(NAME).abs
+	s242ngp $(NAME).s24
+
+sndz80.rel: sndz80.c ngpc.h carthdr.h library.h sounds_z80seq.h
+
+.c.rel:
+	cc900 -c -O3 $< -o $@
+
+.asm.rel:
+	asm900 -g $<
+
+clean:
+	del sndz80.rel sndz80.abs sndz80.s24 sndz80.map
