@@ -55,8 +55,16 @@ static void sfx(u8 id) { sfx_orig_play(id); }
    frame for exactly that reason.) */
 static void music_start_theme(void) {
     Bgm_SetNoteTable(X_THEME_NOTE_TABLE);
+    /* CH2 (the second accompaniment voice) is deliberately silent - heard
+       and accepted by the user (06.08., "3 ist okay", A/B WAV captures in
+       the session). Costs measured with the 30 Hz driver tick: 42.8 ->
+       38.7 raster lines per frame in the calibrated emulator. A NULL
+       stream disables the voice cleanly (BgmVoice_StartEx checks it);
+       the freed tone channel also means one channel less for the SFX
+       system to fight over. Full array stays in ROM - one line brings
+       it back. */
     Bgm_StartLoop4Ex(X_THEME_CH0, 0, X_THEME_CH1, 0,
-                     X_THEME_CH2, 0, X_THEME_CHN, 0);
+                     0, 0, X_THEME_CHN, 0);
     /* Music 4 dB below its own nominal level so the effects carry. Measured:
        the shot sat 11 dB under the arrangement and was inaudible in play.
        Lowering the music is the right lever, not raising the shot - it is

@@ -721,6 +721,7 @@ static BgmVoice s_bgm_vn;
 static u8 s_bgm_loop;
 static u8 s_bgm_speed;
 static u8 s_bgm_gate_percent;
+static u8 s_bgm_tick_rest;   /* carried half VBlank of the 2:1 song tick, see Bgm_Update */
 static u8 s_bgm_fade_speed;    /* 0 = no fade; >0 = frames between fade steps */
 static u8 s_bgm_fade_counter;
 static u8 s_bgm_fade_attn;     /* additional global attn offset (0-15) */
@@ -1519,6 +1520,14 @@ static void BgmVoice_Step(BgmVoice *v, PsgCmd *cmd)
         return;
     }
     if (song_frame < v->next_frame) {
+        /* ONE pass per 30 Hz tick - so the effect counters (instrument
+           ADSR, envelope, vibrato, sweep) run at HALF their authored
+           speed: the noise kick rings out twice as long. THAT IS A HEARD
+           AND ACCEPTED TRADE (user decision 06.08., "ich nehm schepps"):
+           a double pass restored the exact 60 Hz envelopes but cost 8.4
+           of the 25 saved raster lines per frame, and the difference is
+           one slightly longer drum tail. If the trade is ever revisited,
+           the double-pass variant is in the history of this line. */
         if (BgmVoice_UpdateFx(v)) {
             BgmVoice_CommandFromState(v, cmd);
         }
@@ -1929,6 +1938,7 @@ void Sounds_ResetState(void)
     s_bgm_fade_counter = 0;
     s_bgm_fade_attn = 0;
     s_bgm_last_vbl = VBCounter;
+    s_bgm_tick_rest = 0;   /* explicit - a static carries garbage on hardware */
     s_bgm_song_frame = 0;
     s_bgm_ch_used_by_sfx[0] = 0;
     s_bgm_ch_used_by_sfx[1] = 0;
@@ -2548,6 +2558,11 @@ void Bgm_FadeOut(u8 speed)
         Bgm_ResetFadeState();
         return;
     }
+    /* speed is authored in 60 Hz frames; the fade counter ticks at the
+       30 Hz song tick now (see Bgm_Update) - halve, round up, floor 1,
+       so a fade lasts the same milliseconds. */
+    speed = (u8)((speed + 1u) >> 1);
+    if (speed == 0u) speed = 1u;
     s_bgm_fade_speed = speed;
     s_bgm_fade_counter = speed;
     /* Don't reset s_bgm_fade_attn to allow chaining fades */
@@ -2687,14 +2702,42 @@ void Bgm_Update(void)
     if (elapsed == 0) {
         return;
     }
+    /* ===== ONE SONG TICK PER TWO VBLANKS (06.08.2026) ===== The tick used
+       to be the VBlank itself: the catch-up loop below worked off every
+       VBlank since the last call, 60 ticks per second. Measured with the
+       ROM profiler, that made the driver the third-largest item of the
+       whole frame - 12.6 % on hardware - and two thirds of it was this
+       loop running 3-4 rounds per call. The xenon songs use notes, rests
+       and six volume ops and NOT ONE tick-based effect (counted from
+       Musik/xenon_songs.c), so nothing needs the 60 Hz granularity. Every
+       second VBlank is carried over in s_bgm_tick_rest, so no time is
+       ever lost, and note durations are scaled x2 where they are read
+       (see `scaled`) - the piece plays at exactly the same tempo, the
+       gate follows automatically because it derives from `scaled`.
+       SFX are untouched: their timers tick per Sounds_Update() CALL. */
+    elapsed = (u8)(elapsed + s_bgm_tick_rest);
+    s_bgm_tick_rest = (u8)(elapsed & 1u);
+    elapsed >>= 1;
+    s_bgm_last_vbl = VBCounter;
+    if (elapsed == 0) {
+        return;
+    }
 #if SOUNDS_MAX_CATCHUP > 0
     if (elapsed > (u8)SOUNDS_MAX_CATCHUP) {
         elapsed = (u8)SOUNDS_MAX_CATCHUP;
     }
 #endif
-    s_bgm_last_vbl = VBCounter;
     while (elapsed > 0) {
-        s_bgm_song_frame++;
+        /* +2, NOT +1: the song clock stays in the AUTHORED 60 Hz units.
+           Durations, gates and next_frame comparisons all keep their
+           original numbers - one 30 Hz tick simply advances the clock by
+           two of them. No rounding, no drift; note starts quantize to the
+           33 ms grid and that is all.
+           (The first attempt DOUBLED the durations instead - halving the
+           rate already doubles the real time per tick, so that played the
+           piece at quarter speed. Caught by the note-trace comparison,
+           tools' snd_vergleich: 89 note changes against 41.) */
+        s_bgm_song_frame += 2u;
         /* --- Fade processing --- */
         if (s_bgm_fade_speed > 0) {
             if (s_bgm_fade_counter == 0) {
