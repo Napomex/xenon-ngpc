@@ -6067,6 +6067,10 @@ static void player_update(void) {
    enemy_fire), but the shot collision up here already has to ask it. */
 static u8   boss_seg_hit(u8 bx, u8 by);
 static u8   boss_eye_hit(u8 bx, u8 by);
+/* g_boss itself is defined further down; this reader exists so the shot
+   loop above it can short-circuit the two hit tests per probe with ONE
+   call per shot when no boss is live (defined next to boss_eye_hit). */
+static u8   boss_active(void);
 static void boss_take_damage(u8 dmg);
 static u8   main_gun_damage(void);   /* defined further down, needed here already */
 
@@ -6142,15 +6146,23 @@ static void bullets_update(void) {
                 /* Order as before: ALL segment probes FIRST, THEN the eye
                    probes. If one probe hits the eye and a later one a
                    segment, the segment wins - it is in front and swallows. */
+                /* Without a boss BOTH tests can only return 0 - they check
+                   g_boss.active first. But each is a far call, per PROBE
+                   per shot per frame, for the whole level outside the
+                   arena. One local read short-circuits them. Equivalent:
+                   active can only go 1->0 inside this loop (an eye hit),
+                   and a stale 1 merely makes the calls again, which then
+                   return 0 themselves. 0->1 cannot happen here. */
                 u8 seg = 0u, eye = 0u;
+                u8 boss_da = boss_active();   /* g_boss is defined below this function */
                 py = by;
-                for (p = 0u; p < probes; p++) {
+                for (p = 0u; boss_da && p < probes; p++) {
                     if (boss_seg_hit(bx, py)) { seg = 1u; break; }
                     py = (u8)(py + pdist);
                 }
                 if (!seg) {
                     py = by;
-                    for (p = 0u; p < probes; p++) {
+                    for (p = 0u; boss_da && p < probes; p++) {
                         if (boss_eye_hit(bx, py)) { eye = 1u; break; }
                         py = (u8)(py + pdist);
                     }
@@ -6485,6 +6497,8 @@ static void boss_fire(void) {
 
 /* Hit test: ONLY the eye field counts, hits on the body pass straight
    through. bx/by is the centre of the player shot. */
+static u8 boss_active(void) { return g_boss.active; }
+
 static u8 boss_eye_hit(u8 bx, u8 by) {
     u8 y0;
     if (!g_boss.active) return 0u;
@@ -10605,9 +10619,13 @@ static void weapon_update(void) {
            the original: the segments first (they swallow the shot without
            damage), then the eye field. */
         {
+            /* Short-circuit without a boss - same reasoning as at the
+               player shots: two far calls per weapon shot per frame,
+               almost always for nothing. */
             u8 bcx = (u8)(x + 4), bcy = (u8)(y + 2);
-            if (boss_seg_hit(bcx, bcy)) { g_wp_bullets[i].active = 0u; continue; }
-            if (boss_eye_hit(bcx, bcy)) {
+            u8 boss_da = g_boss.active;
+            if (boss_da && boss_seg_hit(bcx, bcy)) { g_wp_bullets[i].active = 0u; continue; }
+            if (boss_da && boss_eye_hit(bcx, bcy)) {
                 boss_take_damage(wp_gun_damage(g_wp_bullets[i].w));
                 g_wp_bullets[i].active = 0u;
                 continue;
@@ -10971,15 +10989,18 @@ static void beam_collide(void) {
     /* Boss: segments first, then the eye - same order as the shots use, so
        a segment in front of the eye wins and swallows the beam. */
     {
+        /* Short-circuit without a boss - same reasoning as at the player
+           shots: two far calls per beam PROBE per frame otherwise. */
         u8 seg = 0u, eye = 0u;
+        u8 boss_da = g_boss.active;
         py = g_beam.top;
-        for (p = 0u; p < np; p++) {
+        for (p = 0u; boss_da && p < np; p++) {
             if (boss_seg_hit(px, py)) { seg = 1u; break; }
             py = (u8)(py + 8u);
         }
         if (!seg) {
             py = g_beam.top;
-            for (p = 0u; p < np; p++) {
+            for (p = 0u; boss_da && p < np; p++) {
                 if (boss_eye_hit(px, py)) { eye = 1u; break; }
                 py = (u8)(py + 8u);
             }
