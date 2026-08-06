@@ -3873,13 +3873,27 @@ static void spr_draw_s_single_flip(u8 oam, u16 s_num, u8 x, u8 y, u8 flip) {
 }
 
 /* ============ Draw the beam weapon ============ Head at the top, the
-   stacked middle below it, the (usually mirrored) tail at the bottom. The
-   block is allocated as ONE piece, because a K2GE chain always refers to
-   the PREVIOUS entry: if a foreign slot lies in between, the chain breaks.
-   Hence oam_pool_alloc_run(). Drawing goes from the bottom up so that the
-   first link sits at the muzzle - that is where the absolute position
-   lives, all the others carry only the delta (0, -mid_h). Moving the whole
-   beam therefore costs ONE write access instead of one per segment. */
+   stacked middle below it, the (usually mirrored) tail at the bottom.
+   Drawing goes from the bottom up, so the first segment sits at the muzzle.
+
+   !! WHAT STOOD HERE UNTIL 06.08. DESCRIBED THE DESIGN OF TWO DAYS EARLIER
+   and was flatly wrong: "the block is allocated as ONE piece ... all the
+   others carry only the delta (0, -mid_h) ... moving the whole beam
+   therefore costs ONE write access instead of one per segment". None of
+   that has been true since 04.08. - see the comment at g_beam: INDIVIDUAL
+   slots, chain bit ZERO, every segment carries its ABSOLUTE position. The
+   rewrite had a hard reason (a contiguous run failed in 12 % of the frames
+   and the beam vanished), but this header was left standing. Two comments
+   on the same function contradicting each other, and the wrong one on top -
+   it travelled on into CLAUDE.md as "drawn as one chain block" and would
+   have sent the next optimisation down a blind alley.
+
+   Cost, measured 06.08. in the profiler scene: beam_draw runs 0.61 times
+   per game frame and costs 10.8 raster lines = 1.4 % of the frame (slot 23,
+   tools/probe_slot23.py). It IS the one unused chaining candidate - a rigid
+   column, same x, fixed y spacing - but a chain needs contiguous slots
+   again, which is exactly what broke. If ever, then as a FALLBACK the way
+   the enemies do it: try contiguous, otherwise individual and unchained. */
 static void beam_draw(u8 bi, u8 stage, u8 gun_x, u8 gun_y) {
     /* gun_x/gun_y are the position of the LOWER end - for the flying laser
        that is g_beam.x/y, not the muzzle. */
