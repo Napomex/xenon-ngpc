@@ -14703,6 +14703,10 @@ static void intro_start(void);
 static void intro_tick(void);
 static void intro_stop(void);
 static void hs_draw(void);
+static void menu_screen_draw(u8 sel);
+static void menu_cursor(u8 sel, u8 an);
+static void options_screen_draw(void);
+static void options_vol_draw(void);
 static u8  g_intro_done;   /* 1 = the intro list has been shown through once */
 static u8  g_hs_shown;     /* 1 = the highscore page is up and waiting for A */
 
@@ -14810,8 +14814,23 @@ static void title_screen_run(void) {
 
     {
     u8 frame_tick = 0u;
+    /* Title flow (07.08.): 0 = attract (logo/intro, then highscore table),
+       1 = menu hub, 2 = options, 3 = highscore called from the menu.
+       Any key in the attract leads to the MENU; the game only starts from
+       the menu's PLAY entry. sel starts on PLAY, so the old "mash A until
+       it starts" still works for every tool and every impatient player -
+       it just takes one edge more. */
+    u8 phase = 0u, sel = 0u, seite = 0u;   /* seite: 1 Menue, 2 Optionen, 3 Highscore neu zeichnen */
     while (1) {
         WaitVsync();
+        /* Screen changes draw HERE, right at the start of the VBlank - the
+           first version drew them at the key edge in mid-frame, and the
+           first font upload after the intro's raster split landed in the
+           picture build and was lost (tile 360 readably EMPTY afterwards,
+           found frame by frame in the emulator). */
+        if (seite == 1u) { menu_screen_draw(sel); seite = 0u; }
+        else if (seite == 2u) { options_screen_draw(); seite = 0u; }
+        else if (seite == 3u) { hs_draw(); seite = 0u; }
         input_update();
         Sounds_Update();   /* keep the menu music running */
         /* t grows by +1 per frame, but by +2 every third frame -> about
@@ -14824,7 +14843,7 @@ static void title_screen_run(void) {
         /* "PRESS A" is gone - the area below the logo now belongs to the
            intro texts. */
         (void)blink_tick; (void)blink;
-        if (!g_hs_shown) {
+        if (phase == 0u && !g_hs_shown) {
             intro_tick();   /* the intro texts run INSIDE the title screen, below the logo */
             if (g_intro_done) {
                 /* Logo AND text disappear, replaced by the high score
@@ -14854,21 +14873,51 @@ static void title_screen_run(void) {
             else                   Sfx_PlayToneEx(2u, 360u, 1u, 6u, 360u, 0, 1u, 0u, 1u, 1u, 3u, 1u);
         }
 #endif
-        /* ===== Music volume ===== UP louder, DOWN quieter (attn 0..15,
-           2 dB per step). The running title music IS the feedback - MATTN
-           takes effect at each voice's next note event, well inside a
-           beat. No text: the area below the logo belongs to the intro
-           (same reason as the frame-rate tone above). Persisted at the
-           next cartridge save (highscore entry), like the frame rate. */
-        if (g_pad_pressed & J_UP) {
-            if (g_music_attn > 0u)  g_music_attn--;
-            Bgm_SetMasterAttn(g_music_attn);
+        if (phase == 0u) {
+            /* attract -> menu on any main key. If the intro is still
+               running, its raster split MUST go off before the menu
+               draws (same rule as the highscore hand-over above). */
+            if (g_pad_pressed & (u8)(J_A | J_B)) {
+                if (!g_hs_shown) { intro_stop(); g_hs_shown = 1u; }
+                sel = 0u;
+                seite = 1u;
+                phase = 1u;
+            }
+        } else if (phase == 1u) {
+            if (g_pad_pressed & J_UP) {
+                sel = (u8)((sel == 0u) ? 2u : (sel - 1u));
+                seite = 1u;   /* full redraw with the dot on the new entry */
+            }
+            if (g_pad_pressed & J_DOWN) {
+                sel = (u8)((sel == 2u) ? 0u : (sel + 1u));
+                seite = 1u;
+            }
+            if ((g_pad_pressed & J_A) && seite == 0u) {
+                if (sel == 0u) break;                       /* PLAY */
+                if (sel == 1u) { seite = 2u; phase = 2u; }
+                else           { seite = 3u; phase = 3u; }  /* HIGHSCORE */
+            }
+        } else if (phase == 2u) {
+            /* ===== Options ===== LEFT/RIGHT set the music volume (shown
+               as 0..15 loudness; stored as attn). The running title music
+               is the second feedback channel. UP/DOWN stay free for the
+               item cursor once more options arrive. Persisted at the next
+               cartridge save (highscore entry), like the frame rate. */
+            if ((g_pad_pressed & J_RIGHT) && g_music_attn > 0u) {
+                g_music_attn--;
+                Bgm_SetMasterAttn(g_music_attn);
+                options_vol_draw();
+            }
+            if ((g_pad_pressed & J_LEFT) && g_music_attn < 15u) {
+                g_music_attn++;
+                Bgm_SetMasterAttn(g_music_attn);
+                options_vol_draw();
+            }
+            if (g_pad_pressed & J_B) { seite = 1u; phase = 1u; }
+        } else {
+            /* highscore page, called from the menu */
+            if (g_pad_pressed & (u8)(J_A | J_B)) { seite = 1u; phase = 1u; }
         }
-        if (g_pad_pressed & J_DOWN) {
-            if (g_music_attn < 15u) g_music_attn++;
-            Bgm_SetMasterAttn(g_music_attn);
-        }
-        if (g_pad_pressed & J_A) break;
     }
     }
 
@@ -15471,6 +15520,70 @@ static void hs_draw(void)
         hs_put_score(5u, row, g_hs_score[i]);
         hs_puts(14u, row, (const char*)g_hs_name[i]);
     }
+}
+
+/* ===================== TITLE MENU (07.08.2026, user request) =====================
+   After the highscore attract a hub screen: PLAY / OPTIONEN / HIGHSCORE.
+   ONE intro_draw_at call renders all three entries - its word wrap breaks
+   "PLAY OPTIONEN HIGHSCORE" into three centred 16x16 rows (each name fits
+   INTRO_COLS=10, the pair never does). That matters because every
+   intro_draw_rows call reallocates the glyph VRAM from scratch: a second
+   call per screen would overwrite the first. The cursor is a small-font
+   '-' ('>' and '*' have no glyph in the shop font, checked in map.h). */
+#define MENU_TROW      6u    /* entries at tile rows 6/8/10 */
+#define OPT_ITEM_TROW  8u    /* first options line (small font) */
+
+/* Cursor = a '.' IN THE BIG ALPHABET, as part of the one menu text. Two
+   dead ends are documented here so nobody digs them up again (07.08.):
+   1. small-font '-' beside the entry: the cell lands in the tilemap, but
+      on the menu page the glyph tile stays readably EMPTY and palette 14
+      zeroed - the 14-glyph menu text collides with the shop-font VRAM in
+      a way the 8-9-glyph pages (OPTIONEN, HIGH SCORE) do not.
+   2. reordering the uploads did not change it.
+   A '.' inside the text needs none of that: one intro_draw_at call per
+   cursor move, and the word wrap keeps every row inside INTRO_COLS
+   (".HIGHSCORE" is exactly 10). */
+static void menu_cursor(u8 sel, u8 an) { (void)sel; (void)an; }
+
+static void menu_screen_draw(u8 sel)
+{
+    u8 i; u16 c;
+    volatile u16 *m2 = SCROLL_PLANE_2;
+    volatile u16 *m1 = SCROLL_PLANE_1;
+    static const char * const zeilen[3] = {
+        ".PLAY OPTIONEN HIGHSCORE",
+        "PLAY .OPTIONEN HIGHSCORE",
+        "PLAY OPTIONEN .HIGHSCORE",
+    };
+    for (i = 0u; i < 19u; i++)
+        for (c = 0u; c < 20u; c++) { m2[(u16)i * 32u + c] = 0u; m1[(u16)i * 32u + c] = 0u; }
+    intro_load_pals();
+    intro_draw_at(zeilen[sel], (u8)MENU_TROW);
+}
+
+static void options_vol_draw(void)
+{
+    /* Shown as VOLUME 0..15 (0 = silent), not as attenuation - the
+       stored value stays attn (see g_music_attn). */
+    u8 vol = (u8)(15u - g_music_attn);
+    hs_putc(15u, (u8)OPT_ITEM_TROW, (u8)(vol >= 10u ? '1' : ' '));
+    hs_putc(16u, (u8)OPT_ITEM_TROW, (u8)(48u + (vol % 10u)));
+}
+
+static void options_screen_draw(void)
+{
+    u8 i; u16 c;
+    volatile u16 *m2 = SCROLL_PLANE_2;
+    volatile u16 *m1 = SCROLL_PLANE_1;
+    for (i = 0u; i < 19u; i++)
+        for (c = 0u; c < 20u; c++) { m2[(u16)i * 32u + c] = 0u; m1[(u16)i * 32u + c] = 0u; }
+    intro_load_pals();
+    intro_draw_at("OPTIONEN", 2u);
+    hs_font_upload();   /* AFTER the big font - see menu_screen_draw */
+    hs_puts(2u, (u8)OPT_ITEM_TROW, "LAUTSTAERKE");
+    options_vol_draw();
+    hs_puts(2u, 16u, "B - ZURUECK");
+    /* room below for more items later (user: "da kommt spaeter noch mehr") */
 }
 
 /* ===================== TRANSITION SCREENS =====================
