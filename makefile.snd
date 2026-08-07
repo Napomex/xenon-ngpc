@@ -5,7 +5,7 @@ NAME = sndtest
 OBJS = \
 	sndtest.rel \
 	library.rel \
-	sounds.rel \
+	sounds_alt.rel \
 
 
 $(NAME).ngp: makefile.snd ngpc.lcf $(OBJS)
@@ -14,6 +14,8 @@ $(NAME).ngp: makefile.snd ngpc.lcf $(OBJS)
 	s242ngp $(NAME).s24
 
 sndtest.rel: sndtest.c ngpc.h carthdr.h library.h sounds.h Musik/xenon_songs.c
+
+sounds_alt.rel: sounds_alt.c sounds.c sounds.h ngpc.h
 
 .c.rel:
 	cc900 -c -O3 $< -o $@

@@ -5,7 +5,7 @@ NAME = sndmix
 OBJS = \
 	sndmix.rel \
 	library.rel \
-	sounds.rel \
+	sounds_alt.rel \
 
 
 $(NAME).ngp: makefile.mix ngpc.lcf $(OBJS)
@@ -14,6 +14,8 @@ $(NAME).ngp: makefile.mix ngpc.lcf $(OBJS)
 	s242ngp $(NAME).s24
 
 sndmix.rel: sndmix.c ngpc.h carthdr.h library.h sounds.h sfx_orig.h Musik/game_theme.c Musik/xenon_songs.c
+
+sounds_alt.rel: sounds_alt.c sounds.c sounds.h ngpc.h
 
 .c.rel:
 	cc900 -c -O3 $< -o $@
