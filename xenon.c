@@ -36,6 +36,12 @@ static void sfx(u8 id) { sfx_orig_play(id); }
    value was CONFIRMED BY EAR on the mixing ROM - sndmix.ngp lets you dial the
    music live and reads out the number to put here. */
 #define MUSIC_ATTN 2u
+/* User-set music volume (attn 0 = loud .. 15 = silent), UP/DOWN on the
+   title screen. A static WITHOUT trusting its power-on value - hardware
+   does not clear RAM, so main() assigns the default before anything reads
+   it, and save_load() may overwrite it from the cartridge (offset 5,
+   sentinel-coded value+1 so old saves with 0 there mean "never set"). */
+static u8 g_music_attn;
 /* X_THEME / X_JINGLE: Megablast, converted straight from the PC-speaker driver
    in XENON2.EXE (tools/music/convert_xenon_music.js) - the ORIGINAL, not an
    arrangement. Picked over the XG MIDI arrangement in Musik/game_theme.c after
@@ -61,7 +67,7 @@ static void music_start_theme(void) {
        the way: X_THEME_CH2 contains NO notes at all (155.7 s of rests, a
        placeholder of the DOS conversion) - the "fourth voice" was always
        empty, on every driver. */
-    Bgm_SetMasterAttn(MUSIC_ATTN);   /* writes the sequencer's MATTN byte */
+    Bgm_SetMasterAttn(g_music_attn); /* user volume; writes the sequencer's MATTN byte */
     BgmZ80_Cmd(1u);                  /* 1 = theme, looping */
 #else
     Bgm_SetNoteTable(X_THEME_NOTE_TABLE);
@@ -78,7 +84,7 @@ static void music_start_theme(void) {
        initialiser inside the driver, and hardware does not clear RAM (see
        the g_hs_shown incident). Setting it on every tune start makes the
        value independent of whatever was in RAM at power-on. */
-    Bgm_SetMasterAttn(MUSIC_ATTN);
+    Bgm_SetMasterAttn(g_music_attn);
 #endif
 }
 
@@ -14848,6 +14854,20 @@ static void title_screen_run(void) {
             else                   Sfx_PlayToneEx(2u, 360u, 1u, 6u, 360u, 0, 1u, 0u, 1u, 1u, 3u, 1u);
         }
 #endif
+        /* ===== Music volume ===== UP louder, DOWN quieter (attn 0..15,
+           2 dB per step). The running title music IS the feedback - MATTN
+           takes effect at each voice's next note event, well inside a
+           beat. No text: the area below the logo belongs to the intro
+           (same reason as the frame-rate tone above). Persisted at the
+           next cartridge save (highscore entry), like the frame rate. */
+        if (g_pad_pressed & J_UP) {
+            if (g_music_attn > 0u)  g_music_attn--;
+            Bgm_SetMasterAttn(g_music_attn);
+        }
+        if (g_pad_pressed & J_DOWN) {
+            if (g_music_attn < 15u) g_music_attn++;
+            Bgm_SetMasterAttn(g_music_attn);
+        }
         if (g_pad_pressed & J_A) break;
     }
     }
@@ -15182,6 +15202,10 @@ static void hs_insert(u8 rank, u32 sc, const u8 *name)
 #define SAVE_OFF_MAGIC     0u     /* 'X','N','S' */
 #define SAVE_OFF_VERSION   3u
 #define SAVE_OFF_FPS       4u
+/* Music volume, SENTINEL-CODED as value+1 (1..16 = attn 0..15). Offset 5
+   was the gap between FPS and SUM; old saves carry 0 there, which decodes
+   as "never set" and leaves the MUSIC_ATTN default - no version bump. */
+#define SAVE_OFF_VOL       5u
 #define SAVE_OFF_SUM       6u     /* u16, low byte first */
 #define SAVE_OFF_TABLE     8u     /* HS_COUNT entries of SAVE_ENTRY_SIZE */
 #define SAVE_ENTRY_SIZE    7u     /* score u32 + three name characters */
@@ -15252,6 +15276,7 @@ static u8 save_store(void)
     b[SAVE_OFF_MAGIC + 2u] = (u8)'S';
     b[SAVE_OFF_VERSION]    = (u8)SAVE_VERSION;
     b[SAVE_OFF_FPS]        = g_fps_mode;
+    b[SAVE_OFF_VOL]        = (u8)(g_music_attn + 1u);   /* sentinel-coded, see SAVE_OFF_VOL */
     for (k = 0u; k < (u8)HS_COUNT; k++) {
         u16 o  = (u16)((u16)SAVE_OFF_TABLE + (u16)k * (u16)SAVE_ENTRY_SIZE);
         u32 sc = g_hs_score[k];
@@ -15341,6 +15366,8 @@ static u8 save_load(void)
         g_hs_name[k][3] = 0u;
     }
     if (b[SAVE_OFF_FPS] == 20u || b[SAVE_OFF_FPS] == 30u) g_fps_mode = b[SAVE_OFF_FPS];
+    if (b[SAVE_OFF_VOL] >= 1u && b[SAVE_OFF_VOL] <= 16u)
+        g_music_attn = (u8)(b[SAVE_OFF_VOL] - 1u);
     return 1u;
 }
 
@@ -16096,7 +16123,13 @@ void main(void) {
     InitialiseQRandom();
 
     /* Start the sound driver and the title theme in the menu.
-       Sounds_Update() ticks it in both the title and the game loop. */
+       Sounds_Update() ticks it in both the title and the game loop.
+       !! g_music_attn BEFORE music_start_theme - the theme reads it, and
+       hardware RAM carries junk at power-on (the first emulator check
+       caught MATTN 0 instead of 2: the assignment sat 80 lines further
+       down, AFTER the theme had already started). save_load() below may
+       overwrite it with the stored volume; that is re-applied there. */
+    g_music_attn = (u8)MUSIC_ATTN;
     Sounds_Init();
     music_start_theme();
 
@@ -16130,6 +16163,7 @@ void main(void) {
        g_dma_table as its buffer, which is safe here because the raster split
        only starts with intro_start() inside title_screen_run(). */
     (void)save_load();
+    Bgm_SetMasterAttn(g_music_attn);   /* the stored volume, onto the already running theme */
 #if SAVE_SELFTEST
     save_selftest();
 #endif
