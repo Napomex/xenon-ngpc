@@ -15075,6 +15075,14 @@ static u16 intro_glyph_of(u8 code)
 static u8 intro_draw_rows(const char *txt, u8 trow);
 static void intro_draw_at(const char *txt, u8 trow) { (void)intro_draw_rows(txt, trow); }
 static u8 intro_draw_text(const char *txt) { return intro_draw_rows(txt, (u8)INTRO_TROW); }
+/* Menu hooks into intro_draw_rows (07.08.): row pitch in tile rows (2 =
+   packed as before, 4 = one blank 16px line between rows) and ONE text
+   row rendered in the highlight palette (0xFF = none). Statics without
+   initialisers - main() assigns both before the title runs (hardware RAM
+   junk!), the menu sets them per call and puts the defaults back. */
+static u8 g_intro_rowstep;
+static u8 g_intro_hi_row;
+#define INTRO_HI_PAL 15u   /* highlight palette (SCR1+SCR2), set by the menu */
 
 static u8 intro_draw_rows(const char *txt, u8 trow)
 {
@@ -15104,7 +15112,10 @@ static u8 intro_draw_rows(const char *txt, u8 trow)
             u8 col0 = (u8)((20u - (u16)n * 2u) / 2u);
             volatile u16 *m2 = SCROLL_PLANE_2;
             volatile u16 *m1 = SCROLL_PLANE_1;
-            u8 ty = (u8)(trow + row * 2u);
+            /* row pitch: junk-safe read of the menu hook (see above) */
+            u8 schritt = (u8)((g_intro_rowstep == 4u) ? 4u : 2u);
+            u8 hell = (u8)(row == g_intro_hi_row);
+            u8 ty = (u8)(trow + row * schritt);
             for (k = 0u; k < n; k++) {
                 u16 g = intro_glyph_of((u8)txt[start + k]);
                 u16 base = intro_upload_glyph(g, &next);
@@ -15118,10 +15129,12 @@ static u8 intro_draw_rows(const char *txt, u8 trow)
                     u16 ia = lvl_menu_font_glyph_idx[(u16)(g - 1u) * 8u + f * 2u];
                     u16 ib = lvl_menu_font_glyph_idx[(u16)(g - 1u) * 8u + f * 2u + 1u];
                     u16 idx = (u16)cy * 32u + (u16)cx;
+                    u16 wa = hell ? (u16)INTRO_HI_PAL : (u16)(INTRO_PAL_BASE + pa);
+                    u16 wb = hell ? (u16)INTRO_HI_PAL : (u16)(INTRO_PAL_BASE + pb);
                     m2[idx] = (ia == 0u || ia == 0xFFFFu) ? 0u
-                              : (u16)(((u16)(INTRO_PAL_BASE + pa) << 9) | (u16)(base + f * 2u));
+                              : (u16)((wa << 9) | (u16)(base + f * 2u));
                     m1[idx] = (ib == 0u || ib == 0xFFFFu) ? 0u
-                              : (u16)(((u16)(INTRO_PAL_BASE + pb) << 9) | (u16)(base + f * 2u + 1u));
+                              : (u16)((wb << 9) | (u16)(base + f * 2u + 1u));
                 }
             }
         }
@@ -15530,19 +15543,15 @@ static void hs_draw(void)
    intro_draw_rows call reallocates the glyph VRAM from scratch: a second
    call per screen would overwrite the first. The cursor is a small-font
    '-' ('>' and '*' have no glyph in the shop font, checked in map.h). */
-#define MENU_TROW      6u    /* entries at tile rows 6/8/10 */
+#define MENU_TROW      5u    /* entries at tile rows 5/9/13 (pitch 4 = one blank line) */
 #define OPT_ITEM_TROW  8u    /* first options line (small font) */
 
-/* Cursor = a '.' IN THE BIG ALPHABET, as part of the one menu text. Two
-   dead ends are documented here so nobody digs them up again (07.08.):
-   1. small-font '-' beside the entry: the cell lands in the tilemap, but
-      on the menu page the glyph tile stays readably EMPTY and palette 14
-      zeroed - the 14-glyph menu text collides with the shop-font VRAM in
-      a way the 8-9-glyph pages (OPTIONEN, HIGH SCORE) do not.
-   2. reordering the uploads did not change it.
-   A '.' inside the text needs none of that: one intro_draw_at call per
-   cursor move, and the word wrap keeps every row inside INTRO_COLS
-   (".HIGHSCORE" is exactly 10). */
+/* Selection = the whole entry in the HIGHLIGHT PALETTE (user request
+   07.08.: "die Palette etwas verschieben"), one blank 16px line between
+   the entries (g_intro_rowstep 4). One dead end stays documented so
+   nobody digs it up again: a small-font cursor beside the entry loses
+   its glyph tile and palette on this page (the menu text collides with
+   the shop-font VRAM in a way the 8-9-glyph pages do not). */
 static void menu_cursor(u8 sel, u8 an) { (void)sel; (void)an; }
 
 static void menu_screen_draw(u8 sel)
@@ -15550,15 +15559,17 @@ static void menu_screen_draw(u8 sel)
     u8 i; u16 c;
     volatile u16 *m2 = SCROLL_PLANE_2;
     volatile u16 *m1 = SCROLL_PLANE_1;
-    static const char * const zeilen[3] = {
-        ".PLAY OPTIONEN HIGHSCORE",
-        "PLAY .OPTIONEN HIGHSCORE",
-        "PLAY OPTIONEN .HIGHSCORE",
-    };
     for (i = 0u; i < 19u; i++)
         for (c = 0u; c < 20u; c++) { m2[(u16)i * 32u + c] = 0u; m1[(u16)i * 32u + c] = 0u; }
     intro_load_pals();
-    intro_draw_at(zeilen[sel], (u8)MENU_TROW);
+    /* the highlight ramp on BOTH planes - the letters are a+b cells */
+    SetPalette(SCR_2_PLANE, (u8)INTRO_HI_PAL, RGB(0,0,0), RGB(15,14,6), RGB(12,9,1), RGB(7,4,0));
+    SetPalette(SCR_1_PLANE, (u8)INTRO_HI_PAL, RGB(0,0,0), RGB(15,15,10), RGB(13,11,3), RGB(8,5,0));
+    g_intro_rowstep = 4u;
+    g_intro_hi_row  = sel;
+    intro_draw_at("PLAY OPTIONS HIGHSCORE", (u8)MENU_TROW);
+    g_intro_rowstep = 2u;
+    g_intro_hi_row  = 0xFFu;
 }
 
 static void options_vol_draw(void)
@@ -15578,7 +15589,7 @@ static void options_screen_draw(void)
     for (i = 0u; i < 19u; i++)
         for (c = 0u; c < 20u; c++) { m2[(u16)i * 32u + c] = 0u; m1[(u16)i * 32u + c] = 0u; }
     intro_load_pals();
-    intro_draw_at("OPTIONEN", 2u);
+    intro_draw_at("OPTIONS", 2u);
     hs_font_upload();   /* AFTER the big font - see menu_screen_draw */
     hs_puts(2u, (u8)OPT_ITEM_TROW, "LAUTSTAERKE");
     options_vol_draw();
@@ -16243,6 +16254,8 @@ void main(void) {
        down, AFTER the theme had already started). save_load() below may
        overwrite it with the stored volume; that is re-applied there. */
     g_music_attn = (u8)MUSIC_ATTN;
+    g_intro_rowstep = 2u;   /* menu hooks, junk-safe before the title (see intro_draw_rows) */
+    g_intro_hi_row  = 0xFFu;
     Sounds_Init();
     music_start_theme();
 
