@@ -15082,7 +15082,9 @@ static u8 intro_draw_text(const char *txt) { return intro_draw_rows(txt, (u8)INT
    junk!), the menu sets them per call and puts the defaults back. */
 static u8 g_intro_rowstep;
 static u8 g_intro_hi_row;
-#define INTRO_HI_PAL 15u   /* highlight palette (SCR1+SCR2), set by the menu */
+#define INTRO_HI_PAL 2u    /* the DIM palette for unselected menu rows (slot 2 is
+                              free on the menu page; 14/15 are NOT - the alphabet
+                              indices 9/10 land there via INTRO_PAL_BASE+idx) */
 
 static u8 intro_draw_rows(const char *txt, u8 trow)
 {
@@ -15112,9 +15114,14 @@ static u8 intro_draw_rows(const char *txt, u8 trow)
             u8 col0 = (u8)((20u - (u16)n * 2u) / 2u);
             volatile u16 *m2 = SCROLL_PLANE_2;
             volatile u16 *m1 = SCROLL_PLANE_1;
-            /* row pitch: junk-safe read of the menu hook (see above) */
+            /* row pitch: junk-safe read of the menu hook (see above).
+               Selection is INVERTED (07.08., second round): the chosen row
+               keeps the ORIGINAL six-colour metallic palettes, everyone
+               else drops to one flat grey ramp. "Every palette one tone
+               lighter" was the first wish, but the capitals use NINE
+               distinct a-palettes and only three slots are free. */
             u8 schritt = (u8)((g_intro_rowstep == 4u) ? 4u : 2u);
-            u8 hell = (u8)(row == g_intro_hi_row);
+            u8 dunkel = (u8)(g_intro_hi_row != 0xFFu && row != g_intro_hi_row);
             u8 ty = (u8)(trow + row * schritt);
             for (k = 0u; k < n; k++) {
                 u16 g = intro_glyph_of((u8)txt[start + k]);
@@ -15129,8 +15136,8 @@ static u8 intro_draw_rows(const char *txt, u8 trow)
                     u16 ia = lvl_menu_font_glyph_idx[(u16)(g - 1u) * 8u + f * 2u];
                     u16 ib = lvl_menu_font_glyph_idx[(u16)(g - 1u) * 8u + f * 2u + 1u];
                     u16 idx = (u16)cy * 32u + (u16)cx;
-                    u16 wa = hell ? (u16)INTRO_HI_PAL : (u16)(INTRO_PAL_BASE + pa);
-                    u16 wb = hell ? (u16)INTRO_HI_PAL : (u16)(INTRO_PAL_BASE + pb);
+                    u16 wa = dunkel ? (u16)INTRO_HI_PAL : (u16)(INTRO_PAL_BASE + pa);
+                    u16 wb = dunkel ? (u16)INTRO_HI_PAL : (u16)(INTRO_PAL_BASE + pb);
                     m2[idx] = (ia == 0u || ia == 0xFFFFu) ? 0u
                               : (u16)((wa << 9) | (u16)(base + f * 2u));
                     m1[idx] = (ib == 0u || ib == 0xFFFFu) ? 0u
@@ -15562,9 +15569,10 @@ static void menu_screen_draw(u8 sel)
     for (i = 0u; i < 19u; i++)
         for (c = 0u; c < 20u; c++) { m2[(u16)i * 32u + c] = 0u; m1[(u16)i * 32u + c] = 0u; }
     intro_load_pals();
-    /* the highlight ramp on BOTH planes - the letters are a+b cells */
-    SetPalette(SCR_2_PLANE, (u8)INTRO_HI_PAL, RGB(0,0,0), RGB(15,14,6), RGB(12,9,1), RGB(7,4,0));
-    SetPalette(SCR_1_PLANE, (u8)INTRO_HI_PAL, RGB(0,0,0), RGB(15,15,10), RGB(13,11,3), RGB(8,5,0));
+    /* the grey ramp for the UNSELECTED rows, on BOTH planes (a+b cells);
+       the selected row keeps the original alphabet palettes */
+    SetPalette(SCR_2_PLANE, (u8)INTRO_HI_PAL, RGB(0,0,0), RGB(7,7,8), RGB(5,5,6), RGB(3,3,4));
+    SetPalette(SCR_1_PLANE, (u8)INTRO_HI_PAL, RGB(0,0,0), RGB(8,8,9), RGB(6,6,7), RGB(4,4,5));
     g_intro_rowstep = 4u;
     g_intro_hi_row  = sel;
     intro_draw_at("PLAY OPTIONS HIGHSCORE", (u8)MENU_TROW);
