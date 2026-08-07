@@ -2585,6 +2585,11 @@ static u16     g_row_map[32];
    carries right away - for trying out a weapon without going through the
    shop. Bit 3 = laser. 0 = off (shipping state). ===== */
 #define START_WEAPONS (1u << 3)   /* Laser */
+/* ===== TEST_TWIN_LASER: mount a SECOND laser copy at player init, as if
+   the shop had sold one - measurement switch for the twin beam
+   (probe_beam_twin.py). Needs the laser bit in START_WEAPONS. 0 = off
+   (shipping state). ===== */
+#define TEST_TWIN_LASER 0
 
 /* ===== PAL_SELFCHECK: 1 = compare the sprite palettes against their
    source every frame (spr_pal_check). The number of deviations can be
@@ -3911,8 +3916,11 @@ static struct {
        slots were still FREE - the pool is not full, it is fragmented, and
        between the used ones there are rarely three in a row. On screen
        that looked like "the laser does not shoot a laser" (user report
-       04.08.). */
-    u8 oams[BEAM_MAX_SEG];
+       04.08.).
+       Sized BEAM_SLOTS_MAX, not BEAM_MAX_SEG (07.08.): the allocator has
+       always been capped at BEAM_SLOTS_MAX (6), so the 14-entry array
+       carried 8 bytes that could never be used - RAM is the bottleneck. */
+    u8 oams[BEAM_SLOTS_MAX];
     u8 cnt;      /* wie viele Slots vergeben sind */
     u8 on;       /* fliegt gerade einer? */
     u8 x, y;     /* Position des UNTEREN Endes */
@@ -3928,6 +3936,23 @@ static struct {
        the beam - a fixed index would be wrong the moment a second weapon
        carries WPB_LASER. Written at launch, read by beam_collide. */
     u8 wp;
+    /* Round-robin over the mounted copies (user report 07.08.: "with two
+       lasers mounted only one fires"). With more than two copies the PAIR
+       rotates; with two, both fire every time. Lives in the struct rather
+       than as its own static so the reset below cannot be forgotten
+       (hardware does not zero RAM). */
+    u8 kop;
+    /* TWIN COLUMN (user decision 07.08. evening: "all mounted lasers fire
+       AT THE SAME TIME"). Both columns leave on the same trigger, so they
+       stay level for their whole flight - the second column only needs
+       its own x and its own OAM slots; y, stage, flight and top stay
+       shared. x2 = 0xFF means single column (one mount, or the second
+       block found fewer than 2 slots - same one-attempt rule as oams).
+       Costs +1 byte net against the old 14-entry single array. */
+    u8 x2;
+    u8 oam2;     /* oams2[0], oder OAM_NONE = kein Block vergeben */
+    u8 cnt2;
+    u8 oams2[BEAM_SLOTS_MAX];
 } g_beam;
 
 /* Flugtempo wie ein Spielerschuss: BULLET_SPEED px je Spielframe. */
@@ -3967,10 +3992,49 @@ static void spr_draw_s_single_flip(u8 oam, u16 s_num, u8 x, u8 y, u8 flip) {
    column, same x, fixed y spacing - but a chain needs contiguous slots
    again, which is exactly what broke. If ever, then as a FALLBACK the way
    the enemies do it: try contiguous, otherwise individual and unchained. */
+
+/* Draw ONE column at gun_x into the given slot list; returns the top edge
+   actually drawn (twin column, 07.08.). Geometry - wanted segments, full
+   demand, tiles, mid height - is computed once in beam_draw(); this only
+   places the sprites, flickers the missing middles and hides the surplus
+   slots (hide, not release - see the block comments in beam_draw). */
+static u8 beam_col_draw(u8 *oams, u8 cnt, u8 seg, u8 voll, u16 head, u16 mid,
+                        u8 mh, u8 tail_flip, u8 gun_x, u8 gun_y)
+{
+    u8 i, y, slot;
+    if ((u8)(seg + 2u) > cnt) seg = (u8)(cnt - 2u);   /* no more middles than slots */
+    y = gun_y;
+    /* bottom: the tail, usually the mirrored head */
+    spr_draw_s_single_flip(oams[0], head, gun_x, y, tail_flip ? (u8)SPR_VFLIP : 0u);
+    /* The middle pieces above it - FLICKERING when not every place is
+       there (see the original comment in the single-column version: two
+       middles share one slot on alternating frames; half a beam is better
+       than none). */
+    { u8 phase = (u8)(g_flicker & 1u);
+      slot = 1u;
+      if (voll > seg) {
+          for (i = 0u; i < voll && slot <= seg; i++) {
+              y = (u8)(y - mh);
+              if (((i + phase) % 2u) == 0u || (voll - i) <= (seg - slot + 1u))
+                  spr_draw_s_single(oams[slot++], mid, gun_x, y);
+          }
+      } else {
+          for (i = 0u; i < seg; i++) {
+              y = (u8)(y - mh);
+              spr_draw_s_single(oams[slot++], mid, gun_x, y);
+          }
+      }
+      /* the head at the very top */
+      spr_draw_s_single(oams[slot], head, gun_x, (u8)(y - mh)); }
+    /* surplus slots: hide, do NOT release */
+    for (i = (u8)(seg + 2u); i < cnt; i++) UnsetSprite(oams[i]);
+    return (u8)(y - mh);
+}
+
 static void beam_draw(u8 bi, u8 stage, u8 gun_x, u8 gun_y) {
     /* gun_x/gun_y are the position of the LOWER end - for the flying laser
        that is g_beam.x/y, not the muzzle. */
-    u8 mh, seg, seg_max, i, y, first;
+    u8 mh, seg, seg_max, i, first;
     u16 mid, head;
     /* !! GEOMETRY INVALID UNTIL SOMETHING IS ACTUALLY DRAWN. Every return
        below leaves the beam invisible for this frame while beam_update()
@@ -4063,8 +4127,25 @@ static void beam_draw(u8 bi, u8 stage, u8 gun_x, u8 gun_y) {
           }
           g_beam.cnt = habe; g_beam.oam = g_beam.oams[0]; }
     }
-    /* There are no more middle pieces than there are slots. */
-    if ((u8)(seg + 2u) > g_beam.cnt) seg = (u8)(g_beam.cnt - 2u);
+    /* The TWIN column plays by the same rules: one request, at full size,
+       individual slots (07.08.). If fewer than two come back the beam
+       simply stays single for the rest of this flight - x2 = 0xFF - and
+       does NOT retry, for the same fragmentation reason as above. */
+    if (g_beam.x2 != 0xFFu && g_beam.oam2 == OAM_NONE) {
+        u8 noetig2 = (u8)(seg_max + 2u), habe2 = 0u;
+        if (noetig2 > (u8)BEAM_SLOTS_MAX) noetig2 = (u8)BEAM_SLOTS_MAX;
+        for (i = 0u; i < noetig2; i++) {
+            first = oam_pool_alloc_p(OAM_PRIO_SHOT);
+            if (first == OAM_NONE) break;
+            g_beam.oams2[habe2++] = first;
+        }
+        if (habe2 < 2u) {
+            for (i = 0u; i < habe2; i++) oam_pool_free(g_beam.oams2[i]);
+            g_beam.x2 = 0xFFu;
+        } else { g_beam.cnt2 = habe2; g_beam.oam2 = g_beam.oams2[0]; }
+    }
+    /* The middle-vs-slot clip lives in beam_col_draw now - each column
+       clips against its OWN block. */
 
     /* !! THE COLUMN IS LEFT-ALIGNED INSIDE ITS TILE, SO IT HAS TO BE
        SHIFTED. Measured out of lvl_tile_data: the stage graphics fill
@@ -4075,40 +4156,20 @@ static void beam_draw(u8 bi, u8 stage, u8 gun_x, u8 gun_y) {
        stage on the SAME centre - the muzzle. */
     gun_x = (u8)(gun_x - (u8)(beam_hit_w(bi, stage) >> 1));
 
-    /* bottom: the tail, usually the mirrored head */
-    y = gun_y;
-    spr_draw_s_single_flip(g_beam.oams[0], head, gun_x, y,
-                           beam_tail_flip[bi][stage] ? (u8)SPR_VFLIP : 0u);
-    /* The middle pieces above it - FLICKERING when not every place is
-       there. A middle piece is then drawn only every other frame, and two
-       share one slot. At 20 fps that flickers at 10 Hz; on a continuous
-       column it is far less noticeable than a gap, and half a beam is
-       better than none. The same remedy as for the player shots (see
-       SPR_BULLET_0). */
     { u8 voll = (u8)(beam_length(bi) / mh);   /* what the beam wants in full */
-      u8 phase = (u8)(g_flicker & 1u);
-      u8 slot = 1u;
-      if (voll > seg) {
-          /* too few slots: skip the missing steps in alternation */
-          for (i = 0u; i < voll && slot <= seg; i++) {
-              y = (u8)(y - mh);
-              if (((i + phase) % 2u) == 0u || (voll - i) <= (seg - slot + 1u))
-                  spr_draw_s_single(g_beam.oams[slot++], mid, gun_x, y);
-          }
-      } else {
-          for (i = 0u; i < seg; i++) {
-              y = (u8)(y - mh);
-              spr_draw_s_single(g_beam.oams[slot++], mid, gun_x, y);
-          }
+      u8 tfl  = beam_tail_flip[bi][stage];
+      g_beam.top = beam_col_draw(g_beam.oams, g_beam.cnt, seg, voll, head, mid,
+                                 mh, tfl, gun_x, gun_y);
+      /* The twin column: same geometry, own x and own slots. Its top is
+         NOT recorded separately - the collision runs per column but takes
+         the shared top, and in the slot-starved case column two simply
+         draws (and therefore hits) a little shorter. */
+      if (g_beam.x2 != 0xFFu && g_beam.oam2 != OAM_NONE) {
+          u8 gx2 = (u8)(g_beam.x2 - (u8)(beam_hit_w(bi, stage) >> 1));
+          (void)beam_col_draw(g_beam.oams2, g_beam.cnt2, seg, voll, head, mid,
+                              mh, tfl, gx2, gun_y);
       }
-      /* the head at the very top */
-      spr_draw_s_single(g_beam.oams[slot], head, gun_x, (u8)(y - mh)); }
-    /* What the block has beyond the clipped length: hide it, do NOT
-       release it - otherwise it falls apart and the next request finds no
-       contiguous room any more. */
-    for (i = (u8)(seg + 2u); i < g_beam.cnt; i++) UnsetSprite(g_beam.oams[i]);
-    (void)0;
-    g_beam.top = (u8)(y - mh);
+    }
     g_beam.on = 1u;
 }
 
@@ -4142,7 +4203,17 @@ static void beam_update(void) {
 
 static void beam_hide(void) {
     u8 i;
-    if (g_beam.oam == OAM_NONE) return;
+    /* The twin column first - it can hold slots even when the main block
+       failed (priority block ran between the two requests). */
+    if (g_beam.oam2 != OAM_NONE) {
+        for (i = 0u; i < g_beam.cnt2; i++) {
+            UnsetSprite(g_beam.oams2[i]);
+            oam_pool_free(g_beam.oams2[i]);
+        }
+        g_beam.oam2 = OAM_NONE; g_beam.cnt2 = 0u;
+    }
+    g_beam.x2 = 0xFFu;
+    if (g_beam.oam == OAM_NONE) { g_beam.on = 0u; return; }
     for (i = 0u; i < g_beam.cnt; i++) {
         UnsetSprite(g_beam.oams[i]);
         oam_pool_free(g_beam.oams[i]);
@@ -5908,7 +5979,8 @@ static void player_init(void) {
     g_player.fire_cd = 0;
     /* !! g_beam.oam is a static without an initialiser - hardware does not
        clear RAM, and a garbage value would be an OAM slot nobody owns. */
-    g_beam.oam = OAM_NONE; g_beam.cnt = 0u; g_beam.on = 0u;
+    g_beam.oam = OAM_NONE; g_beam.cnt = 0u; g_beam.on = 0u; g_beam.kop = 0u;
+    g_beam.x2 = 0xFFu; g_beam.oam2 = OAM_NONE; g_beam.cnt2 = 0u;   /* twin column */
 #ifdef LVL_MOUNT_COUNT
     /* !! THE SAME CLASS, AND I WALKED STRAIGHT INTO IT. wp_mounts_sync()
        only recomputes when weapons_active has changed against
@@ -5947,6 +6019,14 @@ static void player_init(void) {
        graphic. See g_wpx_owner. */
     { u8 sw; for (sw = 0u; sw < (u8)WPX_SLOTS; sw++) g_wpx_owner[sw] = 0xFFu; }
     for (w = 0u; w < (u8)LVL_WEAPON_COUNT; w++) g_player.weapon_cooldown[w] = 0u;
+#if TEST_TWIN_LASER
+    /* Second laser copy as if the shop had sold one - the next
+       wp_mounts_sync() spreads it over two side mounts. Sits AFTER the
+       copies zeroing above, or it would be wiped right away. Needs the
+       laser bit in START_WEAPONS, or the mask reconciliation takes the
+       copies away again. Measurement switch only (probe_beam_twin.py). */
+    g_wp_copies[3] = 2u;
+#endif
 }
 
 /* Tilt level (-2..+2) -> index into lvl_meta_* (order in the export:
@@ -10467,6 +10547,7 @@ static void weapon_update(void) {
                    mount has one beam with its own cooldown. If none is in
                    flight and fire is held, one starts at the muzzle. */
                 if (!g_beam.on && (g_pad & J_A) && g_player.weapon_cooldown[i] == 0u) {
+                    s8 mdx, mdy;
                     /* !! THROUGH wpx_dx/dy, NOT PAST THEM. This read
                        lvl_weapon_muzzle_* on top of a hardwired "+8", so
                        the beam left the middle of the SHIP no matter where
@@ -10474,8 +10555,40 @@ static void weapon_update(void) {
                        entirely and the interim value for an unplaced weapon
                        never applied. Every other weapon goes through these
                        two functions (see wp_spawn); the beam did not. */
-                    g_beam.x = (u8)((s16)g_player.x + wpx_dx(i) + WPX_MUZZLE_DX(i));
-                    g_beam.y = (u8)((s16)g_player.y + wpx_dy(i) + WPX_MUZZLE_DY(i));
+                    /* ALL mounted copies fire AT ONCE (user decision 07.08.
+                       evening, replacing the round-robin from the same
+                       day) - as a TWIN beam: two columns on the same
+                       trigger, sharing flight and stage, see g_beam.x2.
+                       With more than two copies the PAIR rotates through
+                       the mounts (g_beam.kop), so every mount still gets
+                       its turn. The second column starts at the FIRST
+                       mount's height; the side mounts differ by a pixel,
+                       and the pair flies as one shot. */
+                    g_beam.x2 = 0xFFu;
+#ifdef LVL_MOUNT_COUNT
+                    {   u8 kopn = wp_mounts_used(i);
+                        u8 mm = 0xFFu, mm2 = 0xFFu;
+                        if (kopn != 0u) {
+                            if (g_beam.kop >= kopn) g_beam.kop = 0u;
+                            mm = wp_mount_at(i, g_beam.kop);
+                            if (kopn >= 2u)
+                                mm2 = wp_mount_at(i, (u8)((u8)(g_beam.kop + 1u) % kopn));
+                            g_beam.kop = (u8)((u8)(g_beam.kop + 2u) % kopn);
+                        }
+                        if (mm != 0xFFu) {
+                            mdx = (s8)(lvl_mount_dx[mm] - lvl_weapon_anchor_dx[i]);
+                            mdy = (s8)(lvl_mount_dy[mm] - lvl_weapon_anchor_dy[i]);
+                        } else { mdx = wpx_dx(i); mdy = wpx_dy(i); }
+                        if (mm2 != 0xFFu) {
+                            s8 mdx2 = (s8)(lvl_mount_dx[mm2] - lvl_weapon_anchor_dx[i]);
+                            g_beam.x2 = (u8)((s16)g_player.x + mdx2 + WPX_MUZZLE_DX(i));
+                        }
+                    }
+#else
+                    mdx = wpx_dx(i); mdy = wpx_dy(i);
+#endif
+                    g_beam.x = (u8)((s16)g_player.x + mdx + WPX_MUZZLE_DX(i));
+                    g_beam.y = (u8)((s16)g_player.y + mdy + WPX_MUZZLE_DY(i));
                     /* The upgrade stage is the LASER'S power - collect the
                        laser again and the beam gets longer and stronger,
                        as in the original. It used to be nailed to 0, so
@@ -10968,10 +11081,13 @@ static void mine_update(void) {
    8 px shot; measured against the CENTRE of a 48 px column, a target could
    sit a further half height away and still overlap. Hence + h/2 - without
    that the tall box would be quietly cropped back to the bullet's reach. */
-static void beam_collide(void) {
-    s16 bx, by, cy, filt;
-    u8  h, np, p, px, py, dmg, e, w, k, bw;
+static void beam_collide_col(u8 cx);
 
+/* One shot, up to two columns (twin beam, 07.08.). The guards run once;
+   a boss hit inside a column consumes the WHOLE shot via beam_hide(),
+   which clears g_beam.on - so the second column checks it again and a
+   swallowed beam stops hitting with both arms at once. */
+static void beam_collide(void) {
     /* Only while something is actually on screen. g_beam.on is already set
        at the spawn in weapon_update(), a frame before beam_draw() first
        runs, so on that frame g_beam.top still holds the previous beam's
@@ -10979,12 +11095,20 @@ static void beam_collide(void) {
        in step. */
     if (!g_beam.on || g_beam.oam == OAM_NONE) return;
     if (g_beam.top >= g_beam.y) return;    /* nothing drawn yet */
+    beam_collide_col(g_beam.x);
+    if (g_beam.on && g_beam.x2 != 0xFFu && g_beam.oam2 != OAM_NONE)
+        beam_collide_col(g_beam.x2);
+}
+
+static void beam_collide_col(u8 cx) {
+    s16 bx, by, cy, filt;
+    u8  h, np, p, px, py, dmg, e, w, k, bw;
 
     /* The box is the DRAWN column: same left edge, same width. beam_draw
        shifts the picture half a width to the left (see there), so the box
        has to follow, or the two drift apart the moment the stage changes. */
     bw   = beam_hit_w(0u, g_beam.stage);
-    bx   = (s16)((s16)g_beam.x - (s16)(bw >> 1));
+    bx   = (s16)((s16)cx - (s16)(bw >> 1));
     by   = (s16)g_beam.top;
     h    = (u8)((u8)(g_beam.y + 8u) - g_beam.top);
     cy   = (s16)(by + (s16)(h >> 1));
@@ -11012,7 +11136,7 @@ static void beam_collide(void) {
     /* Centre of the drawn column. The shift by half a width and the
        centring cancel out, so this is the muzzle x itself - which is
        the point of centring the picture on it in the first place. */
-    px   = g_beam.x;
+    px   = cx;
     /* Map objects and the boss are POINT tests, so the column has to be
        sampled instead of handed over as a box. Every 8 px: that is the
        height of a map object cell, and a coarser step would stride over
@@ -11547,6 +11671,17 @@ static void draw_sprites(void) {
             }
             if (bh < 2u) { for (bs = 0u; bs < bh; bs++) oam_pool_free(g_beam.oams[bs]); }
             else { g_beam.cnt = bh; g_beam.oam = g_beam.oams[0]; }
+        }
+        /* the twin column with the same priority (07.08.) */
+        if (g_beam.on && g_beam.x2 != 0xFFu && g_beam.oam2 == OAM_NONE) {
+            u8 bn = (u8)BEAM_SLOTS_MAX, bh = 0u, bs;
+            for (bs = 0u; bs < bn; bs++) {
+                u8 got = oam_pool_alloc_p(OAM_PRIO_SHOT);
+                if (got == OAM_NONE) break;
+                g_beam.oams2[bh++] = got;
+            }
+            if (bh < 2u) { for (bs = 0u; bs < bh; bs++) oam_pool_free(g_beam.oams2[bs]); }
+            else { g_beam.cnt2 = bh; g_beam.oam2 = g_beam.oams2[0]; }
         }
         if (g_player.weapons_active && g_wpmod_oam0 == OAM_NONE) {
             g_wpmod_oam0 = oam_pool_alloc_p(OAM_PRIO_SHOT);
@@ -13054,17 +13189,32 @@ static void oam_reset_all(void) {
     /* Modules of weapons 1..n. MANDATORY here, not just as static zero
        initialisation - OAM_NONE is 0xFF, so a zeroed array would mean
        "slot 0 taken" and the first pass would free slots belonging to
-       something else. */
+       something else.
+       !! TWO LOOP BOUNDS, NOT ONE (07.08.). g_wpx_oam/_last/_n/_benutzt/
+       _owner are sized WPX_SLOTS (= LVL_MOUNT_COUNT = 6 today); only
+       g_wpx_head/_div are per WEAPON (11). This loop ran to
+       LVL_WEAPON_COUNT for ALL of them - five entries PAST the slot
+       arrays, on every respawn, shop entry and level start, stamping
+       whatever statics the linker put behind them (g_wpx_head got 0x00 =
+       "metaanim 0" instead of 0xFF = "re-derive"). On screen: modules
+       showing a FOREIGN sprite after the level loop restart, lasers
+       partly gone, the cannon changing graphic (user reports 07.08.
+       evening, screenshots). The slot-count rework ("6 slots against 11
+       before") forgot exactly this reset loop. */
     { u8 w, c;
-      for (w = 0u; w < (u8)LVL_WEAPON_COUNT; w++) {
+      for (w = 0u; w < (u8)WPX_SLOTS; w++) {
           g_wpx_n[w] = 0u;
-          g_wpx_head[w] = 0xFFu;   /* re-derive head index/divider, see g_wpx_head */
-          g_wpx_div[w]  = 1u;
+          g_wpx_benutzt[w] = 0u;
+          g_wpx_owner[w] = 0xFFu;   /* free -> full redraw, matches player_init */
           for (c = 0u; c < (u8)WPX_CELLS; c++) {
               g_wpx_oam[w][c][0] = OAM_NONE;
               g_wpx_oam[w][c][1] = OAM_NONE;
               g_wpx_last[w][c] = 0u;
           }
+      }
+      for (w = 0u; w < (u8)LVL_WEAPON_COUNT; w++) {
+          g_wpx_head[w] = 0xFFu;   /* re-derive head index/divider, see g_wpx_head */
+          g_wpx_div[w]  = 1u;
       } }
     for (i = 0; i < MAX_BULLETS; i++) { g_bullets[i].oam = OAM_NONE; g_bullets[i].last_snum = 0u; }
     /* Wall crawlers: the same obligation as for the weapon modules -
@@ -13770,6 +13920,16 @@ static u8 shop_input(void) {   /* returns 1 = leave the shop */
             g_shop_sel = shop_item_owned(g_shop_last_item) ? (u8)SHOP_SEL_SELL : (u8)SHOP_SEL_BUY;
             g_shop_in_btns = 1u;
         }
+        if (g_pad_pressed & J_B) {
+            /* B = straight onto EXIT (user request 07.08.): one button to
+               leave, from anywhere in the grid. UP still leads back onto
+               the item that was selected. */
+            g_shop_last_item = g_shop_sel;
+            g_shop_sel = (u8)SHOP_SEL_EXIT;
+            g_shop_in_btns = 1u;
+            shop_sel_draw();
+            return 0u;
+        }
     } else {
         if (g_pad_pressed & J_UP) {          /* UP -> back into the item grid */
             g_shop_sel = g_shop_last_item;
@@ -13783,9 +13943,13 @@ static u8 shop_input(void) {   /* returns 1 = leave the shop */
         if (g_pad_pressed & J_RIGHT) {
             if (g_shop_sel < (u8)SHOP_SEL_EXIT) g_shop_sel++;
         }
-        if (g_pad_pressed & J_B) {          /* cancel -> back onto the item */
-            g_shop_sel = g_shop_last_item;
-            g_shop_in_btns = 0u;
+        if (g_pad_pressed & J_B) {
+            /* B = onto EXIT here as well (user request 07.08.). It used to
+               cancel back onto the item, but UP already does that - B is
+               now the same "take me to the way out" everywhere in the
+               shop. autoplay.py's SHOP_EXIT_SEQ still works: its two B
+               presses land on EXIT, DOWN/RIGHT then do nothing, A leaves. */
+            g_shop_sel = (u8)SHOP_SEL_EXIT;
             shop_sel_draw();
             return 0u;                      /* IMPORTANT: this B press is consumed */
         }
@@ -14769,6 +14933,17 @@ static void stars_load(void) {
     }
 }
 
+/* PLAY lock after skipping the attract (user report 07.08.: "when I skip
+   the intro the menu never comes"). Mashing A to skip the intro fired a
+   second edge one frame after the menu appeared - and sel starts on PLAY,
+   so the game launched with the menu visible for a single frame
+   (reproduced: tools/probe_menu2.py, run C). The menu therefore ignores A
+   for this many VBlanks after arriving from the attract. 40 VBlanks is the
+   TRANS_MIN class: long enough that a human who stops mashing when the
+   screen changes keeps the menu, short enough that the bench scripts
+   (pulsed A forever) still get through. UP/DOWN stay live during the lock. */
+#define MENU_A_LOCK 40u
+
 static void title_screen_run(void) {
     u8  i;
     u8  blink = 0u, blink_tick = 0u;
@@ -14821,6 +14996,7 @@ static void title_screen_run(void) {
        it starts" still works for every tool and every impatient player -
        it just takes one edge more. */
     u8 phase = 0u, sel = 0u, seite = 0u;   /* seite: 1 Menue, 2 Optionen, 3 Highscore neu zeichnen */
+    u8 lock = 0u;                          /* PLAY lock, see MENU_A_LOCK */
     while (1) {
         WaitVsync();
         /* Screen changes draw HERE, right at the start of the VBlank - the
@@ -14848,9 +15024,12 @@ static void title_screen_run(void) {
             if (g_intro_done) {
                 /* Logo AND text disappear, replaced by the high score
                    table. The raster split has to go off, or it would
-                   distort the page. */
+                   distort the page. Drawn via seite at the START of the
+                   next VBlank like every other page (07.08.) - it used to
+                   call hs_draw() right here, mid-frame, which is the
+                   tile-shredding class the emulator cannot show. */
                 intro_stop();
-                hs_draw();
+                seite = 3u;
                 g_hs_shown = 1u;
             }
         }
@@ -14882,8 +15061,16 @@ static void title_screen_run(void) {
                 sel = 0u;
                 seite = 1u;
                 phase = 1u;
+                lock = (u8)MENU_A_LOCK;   /* the NEXT mash-edge must not launch PLAY */
             }
         } else if (phase == 1u) {
+            if (lock) lock--;
+            /* Navigation proves intent: whoever presses a direction is
+               READING the menu, not mashing through it - the lock would
+               otherwise swallow a deliberate DOWN+A within its window
+               (caught by probe_menu.py run A: the options page never
+               came). A mash produces only A edges, so the lock holds. */
+            if (g_pad_pressed & (u8)(J_UP | J_DOWN)) lock = 0u;
             if (g_pad_pressed & J_UP) {
                 sel = (u8)((sel == 0u) ? 2u : (sel - 1u));
                 seite = 1u;   /* full redraw with the dot on the new entry */
@@ -14892,7 +15079,7 @@ static void title_screen_run(void) {
                 sel = (u8)((sel == 2u) ? 0u : (sel + 1u));
                 seite = 1u;
             }
-            if ((g_pad_pressed & J_A) && seite == 0u) {
+            if ((g_pad_pressed & J_A) && seite == 0u && lock == 0u) {
                 if (sel == 0u) break;                       /* PLAY */
                 if (sel == 1u) { seite = 2u; phase = 2u; }
                 else           { seite = 3u; phase = 3u; }  /* HIGHSCORE */
@@ -15462,6 +15649,13 @@ static void hs_font_upload(void)
     u16 t;
     u8 w;
     for (t = 0u; t < (u16)LVL_SHOP_FONT_TILE_DATA_COUNT && t < 96u; t++) {
+        /* Upload cadence like spr_tiles_upload/intro_upload_glyph
+           (07.08.): 96 tiles are ~1500 words, far past the 24185-cycle
+           VBlank window - the tail ran into the picture build, which on
+           the DEVICE shreds tile data (invisible in the emulator).
+           24 tiles per VBlank stay inside the window. Costs 4 VBlanks
+           per page build - title only, invisible. */
+        if ((t % 24u) == 0u) wait_vblank();
         dst = (volatile u16*)0xA000u + (u16)(HS_FONT_VRAM + t) * 8u;
         src = &lvl_shop_font_tile_data[t][0];
         for (w = 0u; w < 8u; w++) dst[w] = src[w];
@@ -15514,16 +15708,30 @@ static void hs_put_score(u8 col, u8 row, u32 v)
     }
 }
 
+/* Clear the 19 visible tile rows on both planes, ONE PLANE PER VBLANK
+   (07.08.). The title pages used to clear 760 words in one go - twice
+   what intro_clear_block documents as comfortable for the 24185-cycle
+   window - so the tail ran into the picture build, which on the DEVICE
+   corrupts the write (invisible in the emulator). Title only, the two
+   waits cost 2 VBlanks per page build. */
+static void title_page_clear(void)
+{
+    volatile u16 *m2 = SCROLL_PLANE_2;
+    volatile u16 *m1 = SCROLL_PLANE_1;
+    u8 r; u16 c;
+    wait_vblank();
+    for (r = 0u; r < 19u; r++)
+        for (c = 0u; c < 20u; c++) m2[(u16)r * 32u + c] = 0u;
+    wait_vblank();
+    for (r = 0u; r < 19u; r++)
+        for (c = 0u; c < 20u; c++) m1[(u16)r * 32u + c] = 0u;
+}
+
 static void hs_draw(void)
 {
     u8 i;
-    volatile u16 *m2 = SCROLL_PLANE_2;
-    volatile u16 *m1 = SCROLL_PLANE_1;
-    u16 c;
     hs_init();
-    for (c = 0u; c < 32u * 20u; c++) { }          /* (placeholder, no full clear needed) */
-    for (i = 0u; i < 19u; i++)
-        for (c = 0u; c < 20u; c++) { m2[(u16)i * 32u + c] = 0u; m1[(u16)i * 32u + c] = 0u; }
+    title_page_clear();
 
     hs_font_upload();
     intro_load_pals();
@@ -15563,11 +15771,7 @@ static void menu_cursor(u8 sel, u8 an) { (void)sel; (void)an; }
 
 static void menu_screen_draw(u8 sel)
 {
-    u8 i; u16 c;
-    volatile u16 *m2 = SCROLL_PLANE_2;
-    volatile u16 *m1 = SCROLL_PLANE_1;
-    for (i = 0u; i < 19u; i++)
-        for (c = 0u; c < 20u; c++) { m2[(u16)i * 32u + c] = 0u; m1[(u16)i * 32u + c] = 0u; }
+    title_page_clear();
     intro_load_pals();
     /* the grey ramp for the UNSELECTED rows, on BOTH planes (a+b cells);
        the selected row keeps the original alphabet palettes */
@@ -15591,11 +15795,7 @@ static void options_vol_draw(void)
 
 static void options_screen_draw(void)
 {
-    u8 i; u16 c;
-    volatile u16 *m2 = SCROLL_PLANE_2;
-    volatile u16 *m1 = SCROLL_PLANE_1;
-    for (i = 0u; i < 19u; i++)
-        for (c = 0u; c < 20u; c++) { m2[(u16)i * 32u + c] = 0u; m1[(u16)i * 32u + c] = 0u; }
+    title_page_clear();
     intro_load_pals();
     intro_draw_at("OPTIONS", 2u);
     hs_font_upload();   /* AFTER the big font - see menu_screen_draw */
@@ -15961,6 +16161,19 @@ static void intro_stop(void)
 {
     g_intro_on = 0u;
     g_split_active = 0u;
+    /* Disarm the MicroDMA channels and let the running frame finish -
+       the same lines transition_run() uses, for the same documented
+       reason ("the game over path showed exactly that"): clearing
+       g_split_active only stops the ISR from RE-arming, the channels
+       already armed for this frame keep replaying the zoom table into
+       whatever page comes next. Skip the intro early and the next pages
+       come up shredded - on the device that read as "it hangs and the
+       highscore is wrong" (user report 07.08.). The emulator does not
+       model the armed-channel afterlife: probe_menu3.py shows a clean
+       menu at every skip point, so the emulator CANNOT confirm this fix -
+       device word pending. */
+    HW_DMA0V = 0u; HW_DMA1V = 0u;
+    wait_vblank();
     SCR1_X = 0; SCR1_Y = 0; SCR2_X = 0; SCR2_Y = 0;
 }
 
