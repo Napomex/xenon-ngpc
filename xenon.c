@@ -2260,6 +2260,18 @@ static u16     g_scroll_y;
 static u8      g_spawn_fired[LVL_SPAWN_COUNT]; /* 1 = the trigger row has already been passed */
 static u8      g_spawn_left[LVL_SPAWN_COUNT];  /* remaining enemies in the chain */
 static u8      g_spawn_timer[LVL_SPAWN_COUNT]; /* frames until the next chain link */
+/* Retry cooldown after a FAILED spawn attempt (pool full). Timer 0 meant
+   "try again next frame": in the dense scene 18.9 waves per frame ran
+   their whole body against full pools and only 0.23 spawned (counted
+   06.08., probe_zaehler). With a cooldown the failed wave takes the cheap
+   timer-- path instead; a failed wave retries every SPAWN_RETRY_FRAMES+1
+   frames. Price: a spawn can come up to SPAWN_RETRY_FRAMES frames later
+   than before (150 ms at 20 fps), and when several waves compete for one
+   slot the ORDER can differ - both only in overload scenes where spawns
+   already wait.
+   No chain link is lost: the timer always returns to 0 and g_spawn_left
+   is untouched on failure (same rule as before). */
+#define SPAWN_RETRY_FRAMES 3u
 /* Its own trigger row counter starting at 0, decoupled from the prefill
    offset in g_lvl_row (see enemies_update). */
 static u16     g_spawn_scroll_row;
@@ -7609,34 +7621,39 @@ static void enemies_update(void) {
             }
             if (is_rot) {
                 /* Same pattern as the metasprite branch: only count it as
-                   used on a successful spawn (no free worm slot means try
-                   again next frame). */
+                   used on a successful spawn; a failure arms the retry
+                   cooldown (see SPAWN_RETRY_FRAMES). */
                 if (worm_spawn(s, n)) {
                     g_spawn_left[s]--;
 
                     if (g_spawn_left[s] == 0u && g_spawn_pending) g_spawn_pending--;
                     g_spawn_timer[s] = spawn_gap_frames(s);
+                } else {
+                    g_spawn_timer[s] = SPAWN_RETRY_FRAMES;
                 }
                 continue;
             }
             if (is_meta) {
                 /* Only count it as used on a SUCCESSFUL spawn - otherwise
-                   g_spawn_timer stayed at 0 (no free slot) and tries again
-                   next frame instead of losing the chain link silently. */
+                   the chain link would be lost silently. A failure used to
+                   leave the timer at 0 and re-ran the whole pool search
+                   EVERY frame (3.9 vain metaenemy_spawn calls per frame in
+                   the dense scene); now it arms the retry cooldown. */
                 if (metaenemy_spawn(s, n, is_anim)) {
                     g_spawn_left[s]--;
 
                     if (g_spawn_left[s] == 0u && g_spawn_pending) g_spawn_pending--;
                     g_spawn_timer[s] = spawn_gap_frames(s);
+                } else {
+                    g_spawn_timer[s] = SPAWN_RETRY_FRAMES;
                 }
                 continue;
             }
             /* pool full -> this wave cannot place anything. That is
                exactly what the search below would find as well, only with
-               ten passes. No state changes in the process (g_spawn_timer
-               stays 0, the next frame tries again), so skipping it is
-               equivalent. */
-            if (!platz_frei) continue;
+               ten passes. The retry cooldown replaces "try again next
+               frame" (see SPAWN_RETRY_FRAMES). */
+            if (!platz_frei) { g_spawn_timer[s] = SPAWN_RETRY_FRAMES; continue; }
             spawned = 0u;
             for (i = 0u; i < MAX_ENEMIES; i++) {
                 if (!g_enemies[i].active) {
@@ -7706,13 +7723,16 @@ static void enemies_update(void) {
                to be full the loop found no slot, but the chain link
                counted as used and was gone without trace. The metasprite
                and worm branches already did this correctly; only the
-               normal enemy branch did not. Now g_spawn_timer stays at 0
-               and the next frame tries again as soon as a slot frees up. */
+               normal enemy branch did not. A failure (platz_frei was
+               stale after an earlier spawn this frame) arms the retry
+               cooldown like the other branches. */
             if (spawned) {
                 g_spawn_left[s]--;
 
                 if (g_spawn_left[s] == 0u && g_spawn_pending) g_spawn_pending--;
                 g_spawn_timer[s] = spawn_gap_frames(s);
+            } else {
+                g_spawn_timer[s] = SPAWN_RETRY_FRAMES;
             }
         } else {
             g_spawn_timer[s]--;
