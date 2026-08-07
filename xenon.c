@@ -2842,6 +2842,16 @@ static u16     g_row_map[32];
    animation speeds DOUBLED (half as many frame changes) */
 #define TEST_ANIM_OFF 0
 #define TEST_ANIM_SLOW 0
+/* 1 = metasprites never buy a chain block, every cell sits on its own
+   pool slot. Measuring switch (chain vs no chain, 07.08.2026) - and the
+   emulator VOTES AGAINST THE CHAIN in the dense scene: 743 -> 731 lines
+   per frame WITHOUT it (drawing 220 -> 213.5, OAM upkeep 8.7 -> 5.7).
+   The pool there is full and fragmented, so the block rarely comes about,
+   but the buy/try/release machinery runs anyway (metaanims with changing
+   cell counts return the block and re-try). What the chain SAVES is OAM
+   writes - the class the emulator systematically underrates - so the
+   device pair Testroms/mc_ref|mc_neu decides. Stays 0 until it does. */
+#define TEST_META_NOCHAIN 0
 /* TESTED AND WITHOUT EFFECT (hardware, in the tower band, averaged over 60
    s): reference 73, animations off entirely 66 (-7, the maximum
    available), speed halved 70 (-3). Three rebuilds gave EXACTLY ZERO and
@@ -11871,7 +11881,9 @@ static void draw_sprites(void) {
            chain_base = OAM_NONE falls back to single-slot assignment
            below. */
         if (PROF_OFF(15)) continue;   /* profiling sub-block: draw metasprite enemies */
-        if (show && cnt && m->chain_base == OAM_NONE && m->oam[0] == OAM_NONE) {
+        /* TEST_META_NOCHAIN=1 skips the purchase -> single-slot path for
+           every meta (the measuring switch; findings at its #define). */
+        if (!TEST_META_NOCHAIN && show && cnt && m->chain_base == OAM_NONE && m->oam[0] == OAM_NONE) {
             /* Only as many b slots as cells actually carry an overlay -
                the a planes come first, the b planes behind them as a
                second chain (see spr_draw_cell_a/b). */
